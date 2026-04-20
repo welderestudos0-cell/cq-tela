@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bot Admin</title>
+  <link rel="stylesheet" href="/bot-admin/bot-admin.css" />
+</head>
+<body>
+  <div class="site-bg"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">WA</div>
+        <div>
+          <p class="eyebrow">Agrodan Irriga</p>
+          <h1>Bot Admin</h1>
+        </div>
+      </div>
+
+      <p class="sidebar-copy">
+        Crie mensagens, monte conversas e vincule cada fluxo sem misturar tudo.
+      </p>
+
+      <nav class="nav">
+        <button class="nav-item is-active" data-nav="overview" type="button">
+          <span class="nav-item__title">Visao geral</span>
+          <span class="nav-item__hint">Atalhos e resumo do bot</span>
+        </button>
+        <button class="nav-item" data-nav="mensagens" type="button">
+          <span class="nav-item__title">Mensagens</span>
+          <span class="nav-item__hint">Textos e modulos do bot</span>
+        </button>
+        <button class="nav-item" data-nav="fluxos" type="button">
+          <span class="nav-item__title">Fluxos</span>
+          <span class="nav-item__hint">Conversas por etapas</span>
+        </button>
+        <button class="nav-item" data-nav="vinculos" type="button">
+          <span class="nav-item__title">Vinculos</span>
+          <span class="nav-item__hint">Liga fluxo com setor ou numero</span>
+        </button>
+        <button class="nav-item" data-nav="usuarios" type="button">
+          <span class="nav-item__title">Usuarios</span>
+          <span class="nav-item__hint">Contatos e setores</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-secondary btn-block" data-action="reload" type="button">
+          Atualizar dados
+        </button>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="section-kicker">Painel do bot</p>
+          <h2 id="section-title">Visao geral</h2>
+        </div>
+
+        <div class="topbar-actions">
+          <button class="btn btn-secondary" data-action="reload" type="button">
+            Recarregar
+          </button>
+          <div class="status-pill" id="status-pill">Verificando API</div>
+        </div>
+      </header>
+
+      <section id="app" class="app"></section>
+    </main>
+  </div>
+
+  <div class="modal-root hidden" id="modal-root">
+    <div class="modal-backdrop" data-action="close-modal"></div>
+    <div class="modal-card" id="modal-card"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script defer src="/bot-admin/bot-admin.js"></script>
+</body>
+</html>

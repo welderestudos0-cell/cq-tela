@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quality Control Report</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #d9d9d9;
+      color: #222;
+    }
+
+    .page {
+      width: 1100px;
+      min-height: 1450px;
+      margin: 18px auto;
+      background: #f2f2f2;
+      padding: 32px 46px 40px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .simple-top-space {
+      height: 8px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid #c7cfc7;
+      padding-bottom: 16px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .agrodan {
+      line-height: 1;
+    }
+
+    .agrodan-main {
+      font-size: 34px;
+      font-weight: 700;
+      color: #0b7b3d;
+      letter-spacing: -1px;
+    }
+
+    .agrodan-main .o {
+      color: #f07d00;
+    }
+
+    .agrodan-sub {
+      margin-top: 4px;
+      font-size: 13px;
+      color: #2c6b42;
+    }
+
+    .report-title {
+      padding-top: 6px;
+    }
+
+    .report-title h1 {
+      margin: 0;
+      font-size: 19px;
+      color: #1c2230;
+      font-weight: 700;
+    }
+
+    .report-title div {
+      margin-top: 4px;
+      font-size: 13px;
+      color: #4c5a60;
+      border-bottom: 2px solid #ef7d00;
+      display: inline-block;
+      padding-bottom: 2px;
+    }
+
+    .cq {
+      font-size: 38px;
+      font-weight: 700;
+      color: #ef7d00;
+      padding-top: 2px;
+    }
+
+    .cq span {
+      color: #1d8a46;
+    }
+
+    .section {
+      margin-top: 28px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: 17px;
+      color: #185d35;
+      text-transform: uppercase;
+    }
+
+    .section-head .line {
+      flex: 1;
+      height: 1px;
+      background: #c3cbc3;
+    }
+
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #f2f2f2;
+    }
+
+    .info-table td {
+      border: 1px solid #c6cec6;
+      padding: 8px 10px;
+      width: 33.33%;
+      vertical-align: top;
+    }
+
+    .label {
+      font-size: 12px;
+      color: #5c695f;
+      margin-bottom: 4px;
+    }
+
+    .value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #111;
+    }
+
+    .checklist {
+      border: 1px solid #c6cec6;
+      background: #f2f2f2;
+      padding: 14px 16px;
+    }
+
+    .check-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .check-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .check-item .text {
+      flex: 1;
+      color: #222;
+    }
+
+    .check-item .mark {
+      width: 120px;
+      flex-shrink: 0;
+      text-align: left;
+      white-space: nowrap;
+      color: #222;
+    }
+
+    .question-number {
+      font-weight: 700;
+      color: #185d35;
+      margin-right: 6px;
+    }
+
+    .variety-title {
+      font-size: 34px;
+      color: #2aa7d6;
+      font-weight: 700;
+      margin: 0 0 14px;
+    }
+
+    .photos-title {
+      font-size: 16px;
+      color: #2aa7d6;
+      margin: 4px 0 14px;
+    }
+
+    .photo-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+
+    .photo-item {
+      text-align: center;
+    }
+
+    .photo-box-large {
+      height: 300px;
+      background: #dadada;
+      border: 1px solid #cfcfcf;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #777;
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    .photo-box-large img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .photo-caption {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #6f6f6f;
+    }
+
+    .container-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+
+    .container-item {
+      border: 1px solid #c6cec6;
+      background: #f2f2f2;
+      padding: 10px;
+    }
+
+    .container-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #222;
+    }
+
+    .container-photo {
+      height: 250px;
+      background: #dadada;
+      border: 1px solid #cfcfcf;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #777;
+      font-size: 13px;
+      overflow: hidden;
+    }
+
+    .container-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .container-caption {
+      margin-top: 5px;
+      font-size: 11px;
+      color: #6f6f6f;
+      text-align: center;
+    }
+
+    .footer {
+      margin-top: 20px;
+      font-size: 12px;
+      color: #777;
+      text-align: center;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        margin: 0;
+        width: 100%;
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- PÁGINA 1 -->
+  <div class="page">
+    <div class="header">
+      <div class="header-left">
+        <div class="agrodan">
+          <div class="agrodan-main">AGR<span class="o">O</span>DAN</div>
+          <div class="agrodan-sub">AGROPECUÁRIA RORIZ DANTAS</div>
+        </div>
+
+        <div class="report-title">
+          <h1>QUALITY CONTROL REPORT</h1>
+          <div>Controle de Qualidade</div>
+        </div>
+      </div>
+
+      <div class="cq">| <span>C</span>Q</div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>General Information</h2>
+        <div class="line"></div>
+      </div>
+
+      <table class="info-table">
+        <tr>
+          <td>
+            <div class="label">Customer</div>
+            <div class="value">Roveg</div>
+          </td>
+          <td>
+            <div class="label">Container</div>
+            <div class="value">OTPU 685255-6</div>
+          </td>
+          <td>
+            <div class="label">Vessel</div>
+            <div class="value">ANTONIO FELIX DA SILVA JUNIOR</div>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <div class="label">Loading</div>
+            <div class="value">25/04/2026</div>
+          </td>
+          <td>
+            <div class="label">ETD</div>
+            <div class="value">30/04/2026</div>
+          </td>
+          <td>
+            <div class="label">ETA</div>
+            <div class="value">18/04/2026</div>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Checklist do Container</h2>
+        <div class="line"></div>
+      </div>
+
+      <div class="checklist">
+        <div class="check-item">
+          <div class="text"><span class="question-number">1.</span>Interior do container está limpo (livre de odor, sem materiais estranhos, madeira, insetos, etc);</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">2.</span>Container está sem estragos (borrachas da porta estão em bom estado);</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">3.</span>Drenagem do container está aberta;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">4.</span>Maquinário de refrigeração está operando corretamente;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">5.</span>Container está pré-resfriado na temperatura correta;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">6.</span>Ventilação do container exposta;</div>
+          <div class="mark">( ) S&nbsp;&nbsp;&nbsp;( ) N</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">7.</span>Ventilação a 40 CBM;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">8.</span>A identificação/documentação do container está correta;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">9.</span>Foi verificado se os sensores de temperatura estão funcionando corretamente;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">10.</span>Registradores portáteis de temperatura foram colocados na posição correta na carga;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">11.</span>Foi feito uso de absorvedor de etileno;</div>
+          <div class="mark">( ) S&nbsp;&nbsp;&nbsp;( ) N</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">12.</span>A saída de ventilação dos containers foi aberta e verificada (fazer registro fotográfico);</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">13.</span>O container foi sanitizado com solução à base de ácido peracético;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">14.</span>Qualidade da paletização (fitas, estrado e alinhamento das caixas). Não conformes;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">15.</span>A carga está na temperatura correta (temperatura média de polpa);</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">16.</span>Lacre está devidamente colocado na porta do container;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+        <div class="check-item">
+          <div class="text"><span class="question-number">17.</span>Temperatura de saída do container;</div>
+          <div class="mark">( ) C&nbsp;&nbsp;&nbsp;( ) NC</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      AGRODAN — QUALITY CONTROL REPORT
+    </div>
+  </div>
+
+  <!-- PÁGINA 2 - TOMMY 1 -->
+  <div class="page page-break">
+    <div class="simple-top-space"></div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Variedades de Manga</h2>
+        <div class="line"></div>
+      </div>
+
+      <h3 class="variety-title">Tommy Atkins</h3>
+      <div class="photos-title">Fotos</div>
+
+      <div class="photo-grid-2">
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 1</div>
+          <div class="photo-caption">Caixa da variedade</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 2</div>
+          <div class="photo-caption">Pallet da variedade</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 3</div>
+          <div class="photo-caption">Peso da amostra</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 4</div>
+          <div class="photo-caption">Avaliação interna da polpa</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PÁGINA 3 - TOMMY 2 -->
+  <div class="page page-break">
+    <div class="simple-top-space"></div>
+
+    <div class="section">
+      <h3 class="variety-title">Tommy Atkins</h3>
+      <div class="photos-title">Fotos</div>
+
+      <div class="photo-grid-2">
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 5</div>
+          <div class="photo-caption">Fruta inteira</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 6</div>
+          <div class="photo-caption">Fruta inteira</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 7</div>
+          <div class="photo-caption">Leitura de firmeza</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 8</div>
+          <div class="photo-caption">Coloração da polpa</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PÁGINA 4 - PALMER 1 -->
+  <div class="page page-break">
+    <div class="simple-top-space"></div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Variedades de Manga</h2>
+        <div class="line"></div>
+      </div>
+
+      <h3 class="variety-title">Palmer</h3>
+      <div class="photos-title">Fotos</div>
+
+      <div class="photo-grid-2">
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 1</div>
+          <div class="photo-caption">Etiqueta do lote</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 2</div>
+          <div class="photo-caption">Organização no pallet</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 3</div>
+          <div class="photo-caption">Aspecto externo da fruta</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 4</div>
+          <div class="photo-caption">Peso da fruta</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PÁGINA 5 - PALMER 2 -->
+  <div class="page page-break">
+    <div class="simple-top-space"></div>
+
+    <div class="section">
+      <h3 class="variety-title">Palmer</h3>
+      <div class="photos-title">Fotos</div>
+
+      <div class="photo-grid-2">
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 5</div>
+          <div class="photo-caption">Fruta inteira</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 6</div>
+          <div class="photo-caption">Leitura de firmeza</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 7</div>
+          <div class="photo-caption">Coloração da polpa</div>
+        </div>
+        <div class="photo-item">
+          <div class="photo-box-large">Foto 8</div>
+          <div class="photo-caption">Leitura interna</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PÁGINA 6 - CONTAINER -->
+  <div class="page page-break">
+    <div class="simple-top-space"></div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Container</h2>
+        <div class="line"></div>
+      </div>
+
+      <div class="container-grid">
+        <div class="container-item">
+          <div class="container-title">Espelho de pallet por variedade</div>
+          <div class="container-photo">Foto</div>
+          <div class="container-caption">Espelho de pallet por variedade do container</div>
+        </div>
+
+        <div class="container-item">
+          <div class="container-title">Set point do container</div>
+          <div class="container-photo">Foto</div>
+          <div class="container-caption">Configuração de temperatura do container</div>
+        </div>
+
+        <div class="container-item">
+          <div class="container-title">Quatro drenos</div>
+          <div class="container-photo">Foto</div>
+          <div class="container-caption">Verificação fotográfica dos 4 drenos</div>
+        </div>
+
+        <div class="container-item">
+          <div class="container-title">Numeração interna</div>
+          <div class="container-photo">Foto</div>
+          <div class="container-caption">Identificação interna do container</div>
+        </div>
+
+        <div class="container-item">
+          <div class="container-title">Numeração externa</div>
+          <div class="container-photo">Foto</div>
+          <div class="container-caption">Identificação externa do container</div>
+        </div>
+
+        <div class="container-item">
+          <div class="container-title">Termógrafo</div>
+          <div class="container-photo">Foto</div>
+          <div class="container-caption">Registro do termógrafo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

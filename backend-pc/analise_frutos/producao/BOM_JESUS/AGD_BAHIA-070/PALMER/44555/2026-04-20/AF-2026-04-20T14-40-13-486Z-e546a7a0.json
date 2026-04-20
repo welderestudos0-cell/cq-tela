@@ -1,0 +1,1227 @@
+{
+  "tipo_analise": "Análise de Produção",
+  "fazenda_talhao": "BOM JESUS",
+  "talhao": "AGD BAHIA-070",
+  "semana": "14",
+  "data": "01/04/2026",
+  "controle": "44555",
+  "variedade": "PALMER",
+  "qtd_frutos": "40",
+  "criterio": "Maturação",
+  "observacoes": "",
+  "peso_final_caixa": "0",
+  "form_id": "AF-2026-04-20T14-40-13-486Z-e546a7a0",
+  "avaliador": "welder teixeira",
+  "avaliado": "Controle de qualidade - Packing Manga",
+  "fotos_count": 0,
+  "fotos_salvas": [],
+  "fotos_producao_salvas": "{\"firmeza\":[],\"maturacao\":[],\"danos_internos\":[]}",
+  "frutos": [
+    {
+      "numero_fruto": 1,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 2,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 3,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 4,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 5,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 6,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 7,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 8,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 9,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 10,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 11,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 12,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 13,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 14,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 15,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 16,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 17,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 18,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 19,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 20,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 21,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 22,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 23,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 24,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 25,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 26,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 27,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 28,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 29,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 30,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 31,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 32,
+      "valor": 1.5,
+      "danos_internos": "Colapso Interno"
+    },
+    {
+      "numero_fruto": 33,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 34,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 35,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 36,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 37,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 38,
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 39,
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 40,
+      "valor": 1.5,
+      "danos_internos": ""
+    }
+  ],
+  "lotes": [
+    {
+      "numero_fruto": 1,
+      "criterio": "Penetrometria",
+      "valor": 9.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 1,
+      "criterio": "Brix",
+      "valor": 6.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 1,
+      "criterio": "Matéria Seca",
+      "valor": 15.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 1,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 2,
+      "criterio": "Penetrometria",
+      "valor": 9.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 2,
+      "criterio": "Brix",
+      "valor": 7.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 2,
+      "criterio": "Matéria Seca",
+      "valor": 17.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 2,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 3,
+      "criterio": "Penetrometria",
+      "valor": 9.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 3,
+      "criterio": "Brix",
+      "valor": 6.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 3,
+      "criterio": "Matéria Seca",
+      "valor": 18.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 3,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 4,
+      "criterio": "Penetrometria",
+      "valor": 7.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 4,
+      "criterio": "Brix",
+      "valor": 6.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 4,
+      "criterio": "Matéria Seca",
+      "valor": 17.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 4,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 5,
+      "criterio": "Penetrometria",
+      "valor": 8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 5,
+      "criterio": "Brix",
+      "valor": 6.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 5,
+      "criterio": "Matéria Seca",
+      "valor": 18.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 5,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 6,
+      "criterio": "Penetrometria",
+      "valor": 9.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 6,
+      "criterio": "Brix",
+      "valor": 6.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 6,
+      "criterio": "Matéria Seca",
+      "valor": 16.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 6,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 7,
+      "criterio": "Penetrometria",
+      "valor": 7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 7,
+      "criterio": "Brix",
+      "valor": 6.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 7,
+      "criterio": "Matéria Seca",
+      "valor": 16,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 7,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 8,
+      "criterio": "Penetrometria",
+      "valor": 8.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 8,
+      "criterio": "Brix",
+      "valor": 6.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 8,
+      "criterio": "Matéria Seca",
+      "valor": 18.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 8,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 9,
+      "criterio": "Penetrometria",
+      "valor": 8.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 9,
+      "criterio": "Brix",
+      "valor": 7.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 9,
+      "criterio": "Matéria Seca",
+      "valor": 17.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 9,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 10,
+      "criterio": "Penetrometria",
+      "valor": 7.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 10,
+      "criterio": "Brix",
+      "valor": 6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 10,
+      "criterio": "Matéria Seca",
+      "valor": 15.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 10,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 11,
+      "criterio": "Penetrometria",
+      "valor": 8.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 11,
+      "criterio": "Brix",
+      "valor": 7.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 11,
+      "criterio": "Matéria Seca",
+      "valor": 18.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 11,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 12,
+      "criterio": "Penetrometria",
+      "valor": 8.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 12,
+      "criterio": "Brix",
+      "valor": 7.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 12,
+      "criterio": "Matéria Seca",
+      "valor": 18.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 12,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 13,
+      "criterio": "Penetrometria",
+      "valor": 8.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 13,
+      "criterio": "Brix",
+      "valor": 7.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 13,
+      "criterio": "Matéria Seca",
+      "valor": 20.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 13,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 14,
+      "criterio": "Penetrometria",
+      "valor": 7.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 14,
+      "criterio": "Brix",
+      "valor": 6.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 14,
+      "criterio": "Matéria Seca",
+      "valor": 14.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 14,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 15,
+      "criterio": "Penetrometria",
+      "valor": 9.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 15,
+      "criterio": "Brix",
+      "valor": 6.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 15,
+      "criterio": "Matéria Seca",
+      "valor": 13.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 15,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 16,
+      "criterio": "Penetrometria",
+      "valor": 7.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 16,
+      "criterio": "Brix",
+      "valor": 6.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 16,
+      "criterio": "Matéria Seca",
+      "valor": 16.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 16,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 17,
+      "criterio": "Penetrometria",
+      "valor": 7.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 17,
+      "criterio": "Brix",
+      "valor": 7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 17,
+      "criterio": "Matéria Seca",
+      "valor": 16.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 17,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 18,
+      "criterio": "Penetrometria",
+      "valor": 7.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 18,
+      "criterio": "Brix",
+      "valor": 7.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 18,
+      "criterio": "Matéria Seca",
+      "valor": 16.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 18,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 19,
+      "criterio": "Penetrometria",
+      "valor": 8.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 19,
+      "criterio": "Brix",
+      "valor": 6.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 19,
+      "criterio": "Matéria Seca",
+      "valor": 17.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 19,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 20,
+      "criterio": "Penetrometria",
+      "valor": 7.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 20,
+      "criterio": "Brix",
+      "valor": 6.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 20,
+      "criterio": "Matéria Seca",
+      "valor": 16.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 20,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 21,
+      "criterio": "Penetrometria",
+      "valor": 8.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 21,
+      "criterio": "Brix",
+      "valor": 6.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 21,
+      "criterio": "Matéria Seca",
+      "valor": 14.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 21,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 22,
+      "criterio": "Penetrometria",
+      "valor": 8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 22,
+      "criterio": "Brix",
+      "valor": 6.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 22,
+      "criterio": "Matéria Seca",
+      "valor": 16.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 22,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 23,
+      "criterio": "Penetrometria",
+      "valor": 9.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 23,
+      "criterio": "Brix",
+      "valor": 6.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 23,
+      "criterio": "Matéria Seca",
+      "valor": 17,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 23,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 24,
+      "criterio": "Penetrometria",
+      "valor": 9.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 24,
+      "criterio": "Brix",
+      "valor": 6.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 24,
+      "criterio": "Matéria Seca",
+      "valor": 15.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 24,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 25,
+      "criterio": "Penetrometria",
+      "valor": 9.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 25,
+      "criterio": "Brix",
+      "valor": 6.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 25,
+      "criterio": "Matéria Seca",
+      "valor": 17.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 25,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 26,
+      "criterio": "Penetrometria",
+      "valor": 9.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 26,
+      "criterio": "Brix",
+      "valor": 7.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 26,
+      "criterio": "Matéria Seca",
+      "valor": 19.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 26,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 27,
+      "criterio": "Penetrometria",
+      "valor": 9.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 27,
+      "criterio": "Brix",
+      "valor": 7.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 27,
+      "criterio": "Matéria Seca",
+      "valor": 20.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 27,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 28,
+      "criterio": "Penetrometria",
+      "valor": 10.2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 28,
+      "criterio": "Brix",
+      "valor": 6.9,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 28,
+      "criterio": "Matéria Seca",
+      "valor": 19.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 28,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 29,
+      "criterio": "Penetrometria",
+      "valor": 9.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 29,
+      "criterio": "Brix",
+      "valor": 5.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 29,
+      "criterio": "Matéria Seca",
+      "valor": 15.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 29,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 30,
+      "criterio": "Penetrometria",
+      "valor": 11.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 30,
+      "criterio": "Brix",
+      "valor": 7.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 30,
+      "criterio": "Matéria Seca",
+      "valor": 19.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 30,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 31,
+      "criterio": "Penetrometria",
+      "valor": 8.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 31,
+      "criterio": "Brix",
+      "valor": 6.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 31,
+      "criterio": "Matéria Seca",
+      "valor": 13.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 31,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 32,
+      "criterio": "Penetrometria",
+      "valor": 6.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 32,
+      "criterio": "Brix",
+      "valor": 6.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 32,
+      "criterio": "Matéria Seca",
+      "valor": 13.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 32,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": "Colapso Interno"
+    },
+    {
+      "numero_fruto": 33,
+      "criterio": "Penetrometria",
+      "valor": 8.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 33,
+      "criterio": "Brix",
+      "valor": 6.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 33,
+      "criterio": "Matéria Seca",
+      "valor": 16.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 33,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 34,
+      "criterio": "Penetrometria",
+      "valor": 6.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 34,
+      "criterio": "Brix",
+      "valor": 7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 34,
+      "criterio": "Matéria Seca",
+      "valor": 17,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 34,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 35,
+      "criterio": "Penetrometria",
+      "valor": 7.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 35,
+      "criterio": "Brix",
+      "valor": 6.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 35,
+      "criterio": "Matéria Seca",
+      "valor": 17.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 35,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 36,
+      "criterio": "Penetrometria",
+      "valor": 8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 36,
+      "criterio": "Brix",
+      "valor": 6.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 36,
+      "criterio": "Matéria Seca",
+      "valor": 16.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 36,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 37,
+      "criterio": "Penetrometria",
+      "valor": 10.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 37,
+      "criterio": "Brix",
+      "valor": 6.6,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 37,
+      "criterio": "Matéria Seca",
+      "valor": 14.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 37,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 38,
+      "criterio": "Penetrometria",
+      "valor": 11.3,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 38,
+      "criterio": "Brix",
+      "valor": 7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 38,
+      "criterio": "Matéria Seca",
+      "valor": 16.7,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 38,
+      "criterio": "Maturação",
+      "valor": 2,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 39,
+      "criterio": "Penetrometria",
+      "valor": 9.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 39,
+      "criterio": "Brix",
+      "valor": 6.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 39,
+      "criterio": "Matéria Seca",
+      "valor": 15.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 39,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 40,
+      "criterio": "Penetrometria",
+      "valor": 7.8,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 40,
+      "criterio": "Brix",
+      "valor": 6.1,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 40,
+      "criterio": "Matéria Seca",
+      "valor": 14.4,
+      "danos_internos": ""
+    },
+    {
+      "numero_fruto": 40,
+      "criterio": "Maturação",
+      "valor": 1.5,
+      "danos_internos": ""
+    }
+  ],
+  "data_referencia": "01/04/2026",
+  "created_at": "2026-04-20T14:40:13.486Z",
+  "fotos_producao": {
+    "firmeza": [
+      {
+        "form_id": "AF-2026-04-20T14-40-13-486Z-e546a7a0",
+        "campo": "firmeza",
+        "nome": "foto_1.jpg",
+        "original_nome": "foto_firmeza_1.jpg",
+        "mimetype": "image/jpeg",
+        "tamanho": 2266072,
+        "disk_path": "C:\\Users\\carlos.welder\\Downloads\\CQ\\backend-pc\\analise_frutos\\producao\\BOM_JESUS\\AGD_BAHIA-070\\PALMER\\44555\\2026-04-20\\firmeza\\foto_1.jpg",
+        "url": "/api/analise-frutos/fotos/producao/BOM_JESUS/AGD_BAHIA-070/PALMER/44555/2026-04-20/firmeza/foto_1.jpg"
+      }
+    ],
+    "maturacao": [
+      {
+        "form_id": "AF-2026-04-20T14-40-13-486Z-e546a7a0",
+        "campo": "maturacao",
+        "nome": "foto_1.jpg",
+        "original_nome": "foto_maturacao_1.jpg",
+        "mimetype": "image/jpeg",
+        "tamanho": 2022917,
+        "disk_path": "C:\\Users\\carlos.welder\\Downloads\\CQ\\backend-pc\\analise_frutos\\producao\\BOM_JESUS\\AGD_BAHIA-070\\PALMER\\44555\\2026-04-20\\maturacao\\foto_1.jpg",
+        "url": "/api/analise-frutos/fotos/producao/BOM_JESUS/AGD_BAHIA-070/PALMER/44555/2026-04-20/maturacao/foto_1.jpg"
+      }
+    ],
+    "danos_internos": [
+      {
+        "form_id": "AF-2026-04-20T14-40-13-486Z-e546a7a0",
+        "campo": "danos_internos",
+        "nome": "foto_1.jpg",
+        "original_nome": "foto_danos_internos_1.jpg",
+        "mimetype": "image/jpeg",
+        "tamanho": 2859217,
+        "disk_path": "C:\\Users\\carlos.welder\\Downloads\\CQ\\backend-pc\\analise_frutos\\producao\\BOM_JESUS\\AGD_BAHIA-070\\PALMER\\44555\\2026-04-20\\danos_internos\\foto_1.jpg",
+        "url": "/api/analise-frutos/fotos/producao/BOM_JESUS/AGD_BAHIA-070/PALMER/44555/2026-04-20/danos_internos/foto_1.jpg"
+      }
+    ]
+  },
+  "arquivos": {
+    "pdf_relative_path": "producao/BOM_JESUS/AGD_BAHIA-070/PALMER/44555/2026-04-20/AF-2026-04-20T14-40-13-486Z-e546a7a0.pdf",
+    "json_relative_path": "producao/BOM_JESUS/AGD_BAHIA-070/PALMER/44555/2026-04-20/AF-2026-04-20T14-40-13-486Z-e546a7a0.json"
+  }
+}

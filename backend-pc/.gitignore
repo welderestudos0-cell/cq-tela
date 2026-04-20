@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Environment variables (sensitive!)
+.env
+
+# Databases
+#database.db
+#database.sqlite
+#src/database/*.db
+#src/database/*.db-shm
+#src/database/*.db-wal
+#src/database/backups/
+
+# WhatsApp auth/cache
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Uploads
+uploads/
+
+# Archives
+*.rar
+*.zip
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,0 +1,15 @@
+{
+  "watch": ["src"],
+  "ext": "js,mjs,json",
+  "ignore": [
+    "src/database/*.db",
+    "src/database/*.db-shm",
+    "src/database/*.db-wal",
+    "analisefrutos_fotos/**",
+    "maturacaoforcada/**",
+    "relatorioembarque/**",
+    "uploads/**",
+    "json/**",
+    "tmp_pdf_test/**"
+  ]
+}
