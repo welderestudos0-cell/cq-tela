@@ -1175,7 +1175,10 @@ export async function enviarMFPendentes() {
 }
 
 export async function enviarAFPendentes() {
-  if (!clientePronto) return;
+  if (!clientePronto) {
+    console.log("[AF] WhatsApp não pronto — pendente será enviado no próximo flush.");
+    return;
+  }
   await executarComLockPendentes("AF", async () => {
     await enviarPendentesAF();
   });
@@ -2349,3 +2352,11 @@ export async function enviarPDF(caminhoArquivo, legendaTexto) {
 export function isConectado() {
   return clientePronto;
 }
+
+// Tenta enviar pendentes a cada 2 minutos enquanto o cliente estiver pronto.
+setInterval(() => {
+  if (!clientePronto) return;
+  enviarTodosPendentes().catch((err) => {
+    console.error("[WA] Erro no flush periódico de pendentes:", err?.message);
+  });
+}, 2 * 60 * 1000);

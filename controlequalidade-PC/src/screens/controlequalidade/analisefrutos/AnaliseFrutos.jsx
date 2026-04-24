@@ -705,6 +705,10 @@ export default function AnaliseFrutos({ navigation }) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const userFarm = useMemo(() => String(user?.fazenda || user?.farm || '').trim(), [user?.fazenda, user?.farm]);
+  const userFirstName = useMemo(() => {
+    const rawName = String(user?.nome || user?.name || user?.userName || '').trim();
+    return rawName ? rawName.split(/\s+/)[0] : '';
+  }, [user?.name, user?.nome, user?.userName]);
   const floatingButtonsBottom = useMemo(
     () => Math.max(Platform.OS === 'android' ? 52 : 20, (insets?.bottom || 0) + 12),
     [insets?.bottom],
@@ -736,6 +740,7 @@ export default function AnaliseFrutos({ navigation }) {
   const [showDanosModal, setShowDanosModal] = useState(false);
   const [danosModalFruitIndex, setDanosModalFruitIndex] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showOfflineSavedModal, setShowOfflineSavedModal] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState([]);
@@ -747,7 +752,7 @@ export default function AnaliseFrutos({ navigation }) {
   const isShelfLife = isShelfLifeTipo(header.tipo_analise);
   const isProducao = isProducaoTipo(header.tipo_analise);
   const isAcompanhamento = isAcompanhamentoTipo(header.tipo_analise);
-  const criteriosLoteOptions = isShelfLife ? CRITERIOS_BASE : (isPreColheita || isProducao || isAcompanhamento) ? CRITERIOS_PRE_COLHEITA : CRITERIOS_LOTE;
+  const criteriosLoteOptions = isShelfLife ? [...CRITERIOS_BASE, 'Peso (g)'] : (isPreColheita || isProducao || isAcompanhamento) ? CRITERIOS_PRE_COLHEITA : CRITERIOS_LOTE;
   const loteRows = criteriosLoteOptions.flatMap((criterio) => fruits.map((fruit, fruitIndex) => ({
     fruitIndex,
     numero_fruto: fruit.numero_fruto,
@@ -939,11 +944,11 @@ export default function AnaliseFrutos({ navigation }) {
 
   // Gera a prévia quando entra no passo 3
   useEffect(() => {
-    if (step === 3 && !previewPdfUri && !previewPdfUrl && !isGeneratingPdf && !previewAutoRequestedRef.current) {
+    if (step === 3 && !pdfBase64 && !isGeneratingPdf && !previewAutoRequestedRef.current) {
       previewAutoRequestedRef.current = true;
       gerarPdfParaVisualizacao();
     }
-  }, [step, previewPdfUri, previewPdfUrl, isGeneratingPdf]);
+  }, [step, pdfBase64, isGeneratingPdf]);
 
   // Atualiza um campo especifico do cabecalho do formulario.
   const updateHeader = (key, value) => {
@@ -1725,28 +1730,15 @@ export default function AnaliseFrutos({ navigation }) {
       ]);
     } catch (error) {
       console.warn('[AnaliseFrutos] Falha ao enviar para backend:', error?.message);
-      const isNetworkError = !error?.response;
-      if (isNetworkError) {
-        try {
-          await saveOfflineAnaliseFrutos(payload);
-          clearPreviewState();
-          resetFormState();
-          Alert.alert(
-            'Salvo offline',
-            'Sem conexao com o backend. A analise foi enviada para o sininho e a tela voltou para o cabecalho para evitar duplicidade.',
-            [{ text: 'OK' }],
-          );
-          return;
-        } catch (offlineError) {
-          console.error('[AnaliseFrutos] Falha ao salvar offline:', offlineError?.message);
-        }
+      try {
+        await saveOfflineAnaliseFrutos(payload);
+        clearPreviewState();
+        resetFormState();
+        setShowOfflineSavedModal(true);
+      } catch (offlineError) {
+        console.error('[AnaliseFrutos] Falha ao salvar offline:', offlineError?.message);
+        Alert.alert('Falha ao salvar', 'Nao foi possivel enviar e tambem nao foi possivel salvar no sininho.');
       }
-      Alert.alert(
-        'Falha ao salvar',
-        isNetworkError
-          ? 'Falha de conexao com o backend e nao foi possivel enviar para o sininho.'
-          : 'Nao foi possivel enviar o relatorio para o backend agora.'
-      );
     } finally {
       setSaving(false);
     }
@@ -1970,7 +1962,7 @@ export default function AnaliseFrutos({ navigation }) {
       ? 100
       : Math.max(5, Math.ceil(maxChartValue / 5) * 5);
     const axisStep = showPercentAxis
-      ? 20
+      ? 25
       : (axisMax <= 10 ? 2 : axisMax <= 20 ? 5 : axisMax <= 50 ? 10 : 20);
     const axisTicks = [];
     for (let tick = 0; tick <= axisMax; tick += axisStep) axisTicks.push(tick);
@@ -2105,7 +2097,7 @@ export default function AnaliseFrutos({ navigation }) {
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=700, initial-scale=1.0">
   <title>Prévia - Análise de Frutos</title>
   <style>
     @page {
@@ -2354,15 +2346,15 @@ export default function AnaliseFrutos({ navigation }) {
       background: #f1f3f0;
       border-bottom: 1px solid #d9dfd8;
       color: ${GD};
-      font-size: 22px;
+      font-size: 11px;
       font-weight: 700;
-      padding: 8px 10px;
-      line-height: 1;
+      padding: 6px 8px;
+      line-height: 1.15;
     }
     .metric-table, .chart-table, .damage-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 11px;
+      font-size: 10px;
     }
     .metric-table th, .chart-table th, .damage-table th {
       background: #f7f8f6;
@@ -2375,7 +2367,7 @@ export default function AnaliseFrutos({ navigation }) {
     }
     .metric-table td, .chart-table td, .damage-table td {
       border: 1px solid #ededed;
-      padding: 6px 8px;
+      padding: 5px 6px;
       color: #111;
       background: #fff;
     }
@@ -2398,11 +2390,11 @@ export default function AnaliseFrutos({ navigation }) {
     }
     .bar-track {
       width: 100%;
-      height: 12px;
+      height: 10px;
       background: #c9d0d7;
     }
     .bar-fill {
-      height: 12px;
+      height: 10px;
       background: ${GD};
     }
     .chart-empty {
@@ -2411,15 +2403,20 @@ export default function AnaliseFrutos({ navigation }) {
       padding: 10px 8px !important;
     }
     .axis-scale {
-      margin: 6px 8px 8px;
-      margin-left: calc(34% + 8px);
+      margin: 5px 6px 7px;
+      margin-left: calc(34% + 6px);
       margin-right: 62px;
-      font-size: 8px;
+      font-size: 7px;
       color: #808080;
       display: flex;
       justify-content: space-between;
       border-top: 1px solid #bbbbbb;
-      padding-top: 4px;
+      padding-top: 3px;
+      white-space: nowrap;
+    }
+    .axis-scale span {
+      min-width: 20px;
+      text-align: center;
     }
     .damage-table {
       margin-top: 4px;
@@ -2510,13 +2507,13 @@ export default function AnaliseFrutos({ navigation }) {
     <div class="results-title">RESULTADOS</div>
 
     ${secHead('1', 'DADOS')}
-    ${dataRow('1.1 - Data de Analise', header.data)}
-    ${dataRow('1.2 - Tipo de Analise', header.tipo_analise)}
+    ${dataRow('1.1 - Data de Análise', header.data)}
+    ${dataRow('1.2 - Tipo de Análise', header.tipo_analise)}
     ${dataRow('1.3 - Fazenda/Produtor', header.fazenda_talhao)}
-    ${dataRow('1.4 - Talhao', header.talhao)}
+    ${dataRow('1.4 - Talhão', header.talhao)}
     ${dataRow('1.5 - Variedade', header.variedade)}
     ${dataRow('1.6 - Controle', header.controle)}
-    ${dataRow('1.7 - Observacoes', header.observacoes)}
+    ${dataRow('1.7 - Observações', header.observacoes)}
 
     ${sec2}
     ${sec3}
@@ -2558,40 +2555,15 @@ export default function AnaliseFrutos({ navigation }) {
     setPreviewPdfUri(result.uri);
   };
 
-  // Gera a prévia usando o PDF real do backend para manter layout 100% igual ao arquivo final.
+  // Gera a prévia em HTML para exibir no WebView (igual a Maturação Forçada).
   const gerarPdfParaVisualizacao = async () => {
-    if (isGeneratingPdf || saving || testingPdf) return;
-    if (!fruits.length) {
-      clearPreviewState();
-      return;
-    }
-
+    if (isGeneratingPdf) return;
     try {
       setIsGeneratingPdf(true);
-      // Na prévia (passo 4), nao enviar fotos para evitar upload duplicado antes do salvar final.
-      const { absoluteUrl } = await gerarPdfTesteNoBackend({ includePhotos: false });
-      const localUri = await baixarPdfPreviewNoCache(absoluteUrl);
-      setPdfBase64(null);
-      setPreviewPdfUrl(absoluteUrl);
-      setPreviewPdfUri(localUri || absoluteUrl);
-    } catch (error) {
-      console.warn('[AnaliseFrutos] Falha ao gerar prévia em PDF:', error?.message);
-      const isNetworkError = !error?.response;
-      const backendMessage = String(error?.response?.data?.error || '').trim();
-      if (isNetworkError) {
-        try {
-          await gerarPdfPreviewOffline();
-        } catch {
-          const previewAssets = await resolvePreviewAssets().catch(() => ({}));
-          setPreviewPdfUri('');
-          setPreviewPdfUrl('');
-          setPdfBase64(buildPreviewHtml(previewAssets));
-        }
-        return;
-      }
-      setPreviewPdfUri('');
-      setPreviewPdfUrl('');
-      Alert.alert('Erro', backendMessage || 'Nao foi possivel gerar a previa em PDF agora.');
+      const previewAssets = await resolvePreviewAssets();
+      setPdfBase64(buildPreviewHtml(previewAssets));
+    } catch {
+      Alert.alert('Erro', 'Não foi possível gerar a prévia.');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -2599,12 +2571,7 @@ export default function AnaliseFrutos({ navigation }) {
 
   // Renderiza a prévia dos dados no WebView
   function renderResumo() {
-    const previewSource = previewPdfUri
-      ? { uri: previewPdfUri }
-      : (previewPdfUrl ? { uri: previewPdfUrl } : null);
-    const source = previewSource || (pdfBase64 ? { html: pdfBase64 } : null);
-
-    if (isGeneratingPdf && !source) {
+    if (isGeneratingPdf && !pdfBase64) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={GREEN} />
@@ -2613,7 +2580,7 @@ export default function AnaliseFrutos({ navigation }) {
       );
     }
 
-    if (!source) {
+    if (!pdfBase64) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <MaterialIcons name="picture-as-pdf" size={48} color="#CCC" />
@@ -2640,23 +2607,12 @@ export default function AnaliseFrutos({ navigation }) {
           </TouchableOpacity>
         </View>
         <WebView
-          source={source}
+          source={{ html: pdfBase64 }}
           style={{ flex: 1 }}
           originWhitelist={['*']}
           javaScriptEnabled
           scrollEnabled
           pinchGestureEnabled
-          allowFileAccess
-          allowUniversalAccessFromFileURLs
-          mixedContentMode="always"
-          cacheEnabled={false}
-          startInLoadingState
-          renderLoading={() => (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-              <ActivityIndicator size="large" color={GREEN} />
-              <Text style={{ marginTop: 10, color: '#777', fontSize: 13 }}>Carregando PDF...</Text>
-            </View>
-          )}
           scalesPageToFit={false}
         />
       </View>
@@ -3007,6 +2963,40 @@ export default function AnaliseFrutos({ navigation }) {
           color="#FFFFFF"
         />
       </TouchableOpacity>
+
+      <Modal
+        visible={showOfflineSavedModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOfflineSavedModal(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowOfflineSavedModal(false)}>
+          <Pressable style={[styles.modalCard, styles.offlineSavedModalCard]} onPress={() => {}}>
+            <View style={styles.offlineSavedIconWrap}>
+              <MaterialIcons name="wifi-off" size={28} color="#C56A17" />
+            </View>
+            <Text style={styles.offlineSavedTitle}>Analise enviada para o sininho</Text>
+            <Text style={styles.offlineSavedText}>
+              {userFirstName ? `${userFirstName}, voce nao esta conectado ao Wi-Fi.` : 'Voce nao esta conectado ao Wi-Fi.'}
+            </Text>
+            <Text style={styles.offlineSavedText}>
+              A analise foi enviada para o sininho. Conecte-se ao Wi-Fi corporativo e depois sincronize os dados.
+            </Text>
+            <View style={styles.offlineSavedActions}>
+              <TouchableOpacity
+                style={[styles.offlineSavedButton, styles.offlineSavedButtonGhost]}
+                onPress={() => {
+                  setShowOfflineSavedModal(false);
+                  navigation.goBack();
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.offlineSavedButtonGhostText}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={showHistoryModal}
@@ -3373,6 +3363,57 @@ const styles = StyleSheet.create({
   modalEmpty: { paddingVertical: 24, alignItems: 'center' },
   modalEmptyText: { fontSize: 13, color: '#7B877F', textAlign: 'center' },
   historyCard: { maxHeight: '82%', flexDirection: 'column' },
+  offlineSavedModalCard: { maxWidth: 420, paddingHorizontal: 18, paddingTop: 22, paddingBottom: 18 },
+  offlineSavedIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFF4E8',
+    marginBottom: 14,
+  },
+  offlineSavedTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#24352A',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  offlineSavedText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#5E6C63',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  offlineSavedActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  offlineSavedButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  offlineSavedButtonGhost: {
+    borderWidth: 1,
+    borderColor: '#D9E4DA',
+    backgroundColor: '#F8FBF8',
+  },
+  offlineSavedButtonGhostText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#617066',
+  },
   historyHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   historyCloseBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EDF4EE' },
   historyItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEF3EE' },
