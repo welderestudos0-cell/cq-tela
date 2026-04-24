@@ -26,15 +26,20 @@ const Stack = createStackNavigator();
 // Stack para usuários autenticados
 function AuthenticatedStack() {
   return (
-    <Stack.Navigator 
+    <Stack.Navigator
       initialRouteName="LoadingScreen"
-      screenOptions={{ 
+      screenOptions={{
         headerShown: false,
+        gestureEnabled: false,
         cardStyleInterpolator: ({ current }) => ({
           cardStyle: {
             opacity: current.progress,
           },
         }),
+        transitionSpec: {
+          open:  { animation: 'timing', config: { duration: 180 } },
+          close: { animation: 'timing', config: { duration: 160 } },
+        },
       }}
     >
       <Stack.Screen name="LoadingScreen" component={LoadingScreen} />

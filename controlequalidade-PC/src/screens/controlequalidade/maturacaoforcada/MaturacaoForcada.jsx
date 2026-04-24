@@ -1,11 +1,11 @@
-﻿// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// MATURAÃ‡ÃƒO FORÃ‡ADA â€” CONTROLE DE QUALIDADE
+﻿// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// MATURAÃ‡ÃƒO FORÃ‡ADA â€" CONTROLE DE QUALIDADE
 // Tela de formulÃ¡rio completo para registro de anÃ¡lise de maturaÃ§Ã£o forÃ§ada.
-// Fluxo: identificaÃ§Ã£o da amostra â†’ dados da anÃ¡lise â†’ fotos â†’ geraÃ§Ã£o de PDF.
+// Fluxo: identificaÃ§Ã£o da amostra â†' dados da anÃ¡lise â†' fotos â†' geraÃ§Ã£o de PDF.
 // Gera o PDF usando maturacaoPdfReport.js e permite compartilhar/salvar.
 // Salva rascunho localmente (AsyncStorage) e envia ao servidor via API.
-// Rota: "MaturacaoForcada" em routes.js â†’ AuthenticatedStack
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Rota: "MaturacaoForcada" em routes.js â†' AuthenticatedStack
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,10 +36,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../../context/AuthContext';
 import api from '../../../services/api';
 import buildMaturacaoPdfReport from './maturacaoPdfReport';
 
-// â”€â”€â”€ Paleta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Paleta â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 const GREEN  = '#2E7D32';
 const LGREEN = '#E8F5E9';
 const ORANGE = '#F39C12';
@@ -123,7 +124,7 @@ const normalizeDraftList = (input) => {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MODAL: data
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â”€â”€ CalendÃ¡rio customizado â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€ CalendÃ¡rio customizado â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 const MONTHS_PT = [
   'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
@@ -306,7 +307,7 @@ function TextModal({ visible, title, placeholder, value, onConfirm, onClose }) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// STEP INDICATOR â€” clicÃ¡vel
+// STEP INDICATOR â€" clicÃ¡vel
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const STEPS = ['Identificação', 'Avaliação', 'Fotos', 'Prévia PDF'];
 
@@ -379,7 +380,7 @@ function NumberRow({ label, required, value, onChange }) {
   );
 }
 
-// â”€â”€ Linha expansÃ­vel (Leve / Moderado / Severo) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€ Linha expansÃ­vel (Leve / Moderado / Severo) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function ExpandableGroup({ label, values, onChange }) {
   const [open, setOpen] = useState(false);
   const total = values.reduce((a, v) => a + (parseInt(v) || 0), 0);
@@ -434,7 +435,7 @@ function TalhaoListModal({ visible, items, onSelect, onClose }) {
           />
           {items.length === 0 ? (
             <View style={{ padding: 24, alignItems: 'center' }}>
-              <Text style={{ color: '#888', fontSize: 13 }}>Selecione uma fazenda primeiro</Text>
+              <Text style={{ color: '#888', fontSize: 13 }}>Nenhum talhão disponível</Text>
             </View>
           ) : (
             <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
@@ -471,9 +472,10 @@ function TalhaoListModal({ visible, items, onSelect, onClose }) {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function MaturacaoForcada({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [step, setStep] = useState(0);
 
-  // â”€â”€ Passo 1
+  // â"€â"€ Passo 1
   const [dataRec, setDataRec] = useState(null);
   const [dataAna, setDataAna] = useState(new Date());
   const [fazenda, setFazenda]   = useState('');
@@ -485,7 +487,7 @@ export default function MaturacaoForcada({ navigation, route }) {
   const [variedade, setVariedade] = useState('');
   const [qtd, setQtd] = useState('');
 
-  // â”€â”€ Passo 2
+  // â"€â"€ Passo 2
   const [te, setTe] = useState('');
   const [pc, setPc] = useState(['','','']);
   const [df, setDf] = useState(['','','']);
@@ -499,7 +501,7 @@ export default function MaturacaoForcada({ navigation, route }) {
   const [pdfBase64, setPdfBase64] = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
 
-  // â”€â”€ Passo 3
+  // â"€â"€ Passo 3
   const [fotos, setFotos] = useState([]);
   const [showPhotoEditor, setShowPhotoEditor] = useState(false);
   const [editingPhotoIndex, setEditingPhotoIndex] = useState(-1);
@@ -523,7 +525,7 @@ export default function MaturacaoForcada({ navigation, route }) {
   const photoEditorRequestRef = useRef(0);
   const previewLogoRef = useRef('');
 
-  // â”€â”€ Modais
+  // â"€â"€ Modais
   const [showDateRec, setShowDateRec]   = useState(false);
   const [showDateAna, setShowDateAna]   = useState(false);
   const [showFazenda, setShowFazenda]   = useState(false);
@@ -542,6 +544,11 @@ export default function MaturacaoForcada({ navigation, route }) {
   const [novaVariedade, setNovaVariedade] = useState('');
   const [buscaVariedade, setBuscaVariedade] = useState('');
   const [variedadesApi, setVariedadesApi] = useState(VARIEDADES_MANGA_FALLBACK);
+
+  const avaliadorNome = String(user?.nome || user?.name || user?.NAME || '').trim() || String(responsavel || '').trim();
+  const avaliadorCargo = String(user?.cargo || user?.CARGO || '').trim();
+  const avaliadorMatricula = String(user?.matricula || user?.MATRICULA || user?.id || user?.ID_USER || '').trim();
+  const avaliadoNome = String(fazenda || fornecedor || '').trim();
 
   useEffect(() => {
     const VARIEDADES_API_KEY = '@maturacao:variedades_api';
@@ -585,10 +592,11 @@ export default function MaturacaoForcada({ navigation, route }) {
     const TALHOES_KEY = '@maturacao:talhoes';
     const CATALOGO_KEY = '@maturacao:catalogo';
 
-    // Aplica talhoes.
+    // Aplica talhoes — exibe todos direto sem filtrar por fazenda.
     const applyTalhoes = (list) => {
       if (!Array.isArray(list) || list.length === 0) return;
       setAllTalhoes(list);
+      setTalhoesList(list.map(t => ({ parcela: t.talhao, variedade: t.variedade, fazenda: t.fazenda })));
       const uniqueFazendas = [...new Set(list.map(t => t.fazenda).filter(Boolean))];
       setFazendas(uniqueFazendas);
     };
@@ -645,7 +653,7 @@ export default function MaturacaoForcada({ navigation, route }) {
     setComprador(found?.comprador || '');
     setResponsavel(found?.comprador || '');
 
-    // Filtra talhÃµes da fazenda selecionada â†’ campo "talhao" vira opÃ§Ã£o de parcela
+    // Filtra talhÃµes da fazenda selecionada â†' campo "talhao" vira opÃ§Ã£o de parcela
     const talhoesDaFazenda = allTalhoes.filter(t => t.fazenda === nomeFazenda);
     setTalhoesList(talhoesDaFazenda.map(t => ({ parcela: t.talhao, variedade: t.variedade })));
   };
@@ -664,19 +672,19 @@ export default function MaturacaoForcada({ navigation, route }) {
     const unicas = [...new Set(variedadesDoTalhao)];
 
     if (unicas.length === 1) {
-      // SÃ³ uma variedade â†’ preenche automÃ¡tico
+      // SÃ³ uma variedade â†' preenche automÃ¡tico
       setVariedade(unicas[0]);
     } else if (unicas.length > 1) {
-      // Mais de uma â†’ abre picker para escolher
+      // Mais de uma â†' abre picker para escolher
       setVariedadeOptions(unicas);
       setShowVariedadePicker(true);
     } else {
-      // Sem variedade â†’ limpa o campo para digitar
+      // Sem variedade â†' limpa o campo para digitar
       setVariedade('');
     }
   };
 
-  // â”€â”€ derivados
+  // â"€â"€ derivados
   const totalFrutos  = parseInt(qtd) || 0;
   const totalDefeito = [
     te, ...pc, ...df, ...peduncular,
@@ -687,16 +695,16 @@ export default function MaturacaoForcada({ navigation, route }) {
     : '0.0';
 
   // Trata navegacao de retorno respeitando o estado atual do fluxo.
-  function voltar() {
+  async function voltar() {
     if (step === 0) {
-      salvarRascunho();
+      await salvarRascunho();
       navigation.goBack();
     } else {
       setStep(s => s - 1);
     }
   }
 
-  // â”€â”€ fotos
+  // â"€â"€ fotos
   const validarIdentificacao = () => {
     if (!dataRec) {
       Alert.alert('Obrigatório', 'Preencha a Data de Recebimento.');
@@ -1496,9 +1504,9 @@ export default function MaturacaoForcada({ navigation, route }) {
           </div>
         </div>
         <div class="top-grid">
-          <div><b>Avaliador:</b> ${escapeHtml(responsavel || 'Priscilla Araújo Dantas')}</div>
+          <div><b>Avaliador:</b> ${escapeHtml(avaliadorNome || 'Não informado')}</div>
           <div><b>Inicial:</b> ${escapeHtml(fmt(dataRec) || fmt(dataAna) || '-')}</div>
-          <div><b>Avaliado:</b> Controle de qualidade - Packing Manga</div>
+          <div><b>Avaliado:</b> ${escapeHtml(avaliadoNome || 'Não informado')}</div>
           <div><b>Fim:</b> ${escapeHtml(fmt(dataAna) || '-')}</div>
         </div>
         <div class="results-title">RESULTADOS</div>
@@ -1720,8 +1728,12 @@ export default function MaturacaoForcada({ navigation, route }) {
     fazenda,
     talhao,
     fornecedor,
-    responsavel,
+    responsavel: avaliadorNome,
     comprador,
+    avaliado: avaliadoNome,
+    usuario: avaliadorNome,
+    cargo: avaliadorCargo,
+    matricula: avaliadorMatricula,
     parcela,
     variedade,
     qtd,
@@ -1790,7 +1802,10 @@ export default function MaturacaoForcada({ navigation, route }) {
       formData.append('comprador',     comprador   || '');
       formData.append('produtor',      fazenda     || '');
       formData.append('parcela',       parcela     || '');
-      formData.append('responsavel',   responsavel || '');
+      formData.append('responsavel',   avaliadorNome || '');
+      formData.append('usuario',       avaliadorNome || '');
+      formData.append('cargo',         avaliadorCargo || '');
+      formData.append('matricula',     avaliadorMatricula || '');
       formData.append('variedade',     variedade   || '');
       formData.append('dataRec',       dataRec ? fmt(dataRec) : '');
       formData.append('dataAna',       dataAna ? fmt(dataAna) : '');
@@ -1856,7 +1871,7 @@ export default function MaturacaoForcada({ navigation, route }) {
       await gerarArquivoPdf();
 
 
-      // 4. Se enviou com sucesso â†’ limpa formulÃ¡rio
+      // 4. Se enviou com sucesso â†' limpa formulÃ¡rio
       if (enviouServidor) {
         limparFormulario();
       } else {
@@ -1938,7 +1953,7 @@ export default function MaturacaoForcada({ navigation, route }) {
         return atualizada;
       });
     } catch (err) {
-      // 409 = jÃ¡ existe no banco, tudo bem â€” continua
+      // 409 = jÃ¡ existe no banco, tudo bem â€" continua
       if (!err?.response || err?.response?.status !== 409) {
         // Fallback: salva sÃ³ local se API falhou por outro motivo
         try {
@@ -1985,25 +2000,16 @@ export default function MaturacaoForcada({ navigation, route }) {
         <DateField label="Data de Recebimento" required value={dataRec} onPress={() => setShowDateRec(true)} />
         <DateField label="Data da Análise"     required value={dataAna} onPress={() => setShowDateAna(true)} />
 
-        {/* Fazenda */}
-        <View style={st.field}>
-          <Text style={st.fieldLabel}>Fazenda<Text style={st.req}> *</Text></Text>
-          <TouchableOpacity style={[st.inputBox, st.row]} onPress={() => setShowFazenda(true)} activeOpacity={0.8}>
-            <Text style={[st.inputText, !fazenda && st.placeholder]}>{fazenda || 'Selecione...'}</Text>
-            <MaterialIcons name="expand-more" size={22} color="#999" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Parcela â€” lista carregada ao selecionar fazenda */}
+        {/* Parcela */}
         <View style={st.field}>
           <Text style={st.fieldLabel}>Talhão<Text style={st.req}> *</Text></Text>
           <TouchableOpacity
-            style={[st.inputBox, st.row, !fazenda && { opacity: 0.5 }]}
-            onPress={() => { if (fazenda) setShowTalhao(true); }}
+            style={[st.inputBox, st.row]}
+            onPress={() => setShowTalhao(true)}
             activeOpacity={0.8}
           >
             <Text style={[st.inputText, !parcela && st.placeholder, { flex: 1 }]}>
-              {parcela || (fazenda ? 'Selecione o talhão...' : 'Selecione a fazenda primeiro')}
+              {parcela || 'Selecione o talhão...'}
             </Text>
             <MaterialIcons name="expand-more" size={22} color="#999" />
           </TouchableOpacity>
@@ -2258,7 +2264,7 @@ export default function MaturacaoForcada({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      {/* Steps â€” clicÃ¡veis */}
+      {/* Steps â€" clicÃ¡veis */}
       <View style={st.stepWrap}>
         <StepIndicator current={step} onPress={handleStepPress} />
       </View>
@@ -2311,7 +2317,7 @@ export default function MaturacaoForcada({ navigation, route }) {
         </Text>
       </TouchableOpacity>
 
-      {/* â”€â”€ MODAIS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* â"€â"€ MODAIS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
 
       <DateModal
         visible={showDateRec}
@@ -2572,7 +2578,7 @@ export default function MaturacaoForcada({ navigation, route }) {
               style={st.cadastrarVarBtn}
               onPress={() => {
                 setNovaVariedade('');
-                // iOS nÃ£o abre segundo Modal com outro aberto â€” fecha o primeiro antes
+                // iOS nÃ£o abre segundo Modal com outro aberto â€" fecha o primeiro antes
                 setShowVariedadePicker(false);
                 setTimeout(() => setShowCadastroVariedade(true), 400);
               }}
@@ -2663,7 +2669,7 @@ export default function MaturacaoForcada({ navigation, route }) {
   );
 }
 
-// â”€â”€â”€ Estilos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Estilos â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 const st = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F2F2F2' },
 
@@ -3296,7 +3302,7 @@ const st = StyleSheet.create({
   defeitoLabel: { fontSize: 13, color: '#666', fontWeight: '600' },
   defeitoVal: { fontSize: 16, fontWeight: '800', color: ORANGE },
 
-  // â”€â”€ MODAIS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â"€â"€ MODAIS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center', alignItems: 'center',

@@ -3,10 +3,10 @@ import axios from 'axios';
 
 // Configuração padrão
 const DEFAULT_CONFIG = {
-    baseURL: 'http://192.168.2.84:3000/api',
+    baseURL: 'http://10.107.114.11:5151/api',
 
 
-  // baseURL: 'http://192.168.2.84:3000/api', 
+  // baseURL: 'http://10.107.114.11:5151/api', 
   
     // baseURL: 'http://192.168.56.1:3000/api', 
 
@@ -22,7 +22,7 @@ const DEFAULT_CONFIG = {
 
 // URLs de fallback - IPs locais
 const FALLBACK_URLS = [
-  'http://192.168.2.84:3000/api',
+  'http://10.107.114.11:5151/api',
 ];
 
 // Criar instância da API

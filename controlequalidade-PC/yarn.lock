@@ -5181,6 +5181,11 @@ expo-network@~8.0.7:
   resolved "https://registry.npmjs.org/expo-network/-/expo-network-8.0.7.tgz"
   integrity sha512-qmISU2tcSHmy1PD3Zd83XXxegcvGPlZSxACTSjE+bD9o3miQRT0HS5YP5MeH97PLiRduGpyUq38kMF5N//mqrQ==
 
+expo-print@^55.0.13:
+  version "55.0.13"
+  resolved "https://registry.npmjs.org/expo-print/-/expo-print-55.0.13.tgz"
+  integrity sha512-RjQTg9ntBy+Rwhzlp3PQMKN4NWo9GvPxEw7dLyOOhoFusVA5bJqffuEqHLQvlTZeiLlNbga+rJ4NCW21Dy4mLg==
+
 expo-sharing@~14.0.7:
   version "14.0.7"
   resolved "https://registry.npmjs.org/expo-sharing/-/expo-sharing-14.0.7.tgz"

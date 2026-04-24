@@ -114,6 +114,9 @@ function Home({ navigation, route }) {
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const modalAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const heroAvatarAnim = useRef(new Animated.Value(0)).current;
+  const heroAvatarSpinAnim = useRef(new Animated.Value(0)).current;
+  const heroAvatarSequenceRef = useRef(null);
   const fixedIpAppliedRef = useRef(false);
 
   const hasAccessToData = (dataItem) => {
@@ -127,6 +130,36 @@ function Home({ navigation, route }) {
   const filterDataByMatricula = (data) => {
     if (!userData || !userData.matricula) return data;
     return data.filter(item => hasAccessToData(item));
+  };
+
+  const startHeroAvatarAnimation = () => {
+    heroAvatarSequenceRef.current?.stop?.();
+    heroAvatarAnim.stopAnimation();
+    heroAvatarSpinAnim.stopAnimation();
+    heroAvatarAnim.setValue(0);
+    heroAvatarSpinAnim.setValue(0);
+
+    const heroAvatarSequence = Animated.sequence([
+      Animated.delay(3000),
+      Animated.parallel([
+        Animated.timing(heroAvatarAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(heroAvatarSpinAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ]),
+      Animated.delay(4000),
+      Animated.parallel([
+        Animated.timing(heroAvatarAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(heroAvatarSpinAnim, { toValue: 2, duration: 900, useNativeDriver: true }),
+      ]),
+    ]);
+
+    heroAvatarSequenceRef.current = heroAvatarSequence;
+    heroAvatarSequence.start(({ finished }) => {
+      if (finished) {
+        heroAvatarAnim.setValue(0);
+        heroAvatarSpinAnim.setValue(0);
+      }
+      heroAvatarSequenceRef.current = null;
+    });
   };
 
   const fetchUserData = async () => {
@@ -2599,9 +2632,10 @@ useEffect(() => {
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       if (userData) fetchOfflineData();
+      if (!loading) startHeroAvatarAnimation();
     });
     return unsubscribe;
-  }, [navigation, userData]);
+  }, [loading, navigation, userData]);
 
   useEffect(() => {
     if (notificationCount > 0) {
@@ -2615,6 +2649,25 @@ useEffect(() => {
       return () => pulseAnimation.stop();
     }
   }, [notificationCount]);
+
+  useEffect(() => {
+    if (loading) {
+      heroAvatarSequenceRef.current?.stop?.();
+      heroAvatarAnim.setValue(0);
+      heroAvatarSpinAnim.setValue(0);
+      return undefined;
+    }
+
+    startHeroAvatarAnimation();
+
+    return () => {
+      heroAvatarSequenceRef.current?.stop?.();
+      heroAvatarAnim.stopAnimation();
+      heroAvatarSpinAnim.stopAnimation();
+      heroAvatarAnim.setValue(0);
+      heroAvatarSpinAnim.setValue(0);
+    };
+  }, [heroAvatarAnim, heroAvatarSpinAnim, loading]);
 
   useEffect(() => {
     if (!loading) {
@@ -3284,6 +3337,22 @@ const cleanupTempFiles = async () => {
 
   const profileName = getUserName();
   const profileFuncao = getUserField('funcao', 'cargo', 'setor', 'modulo');
+  const heroIconOpacity = heroAvatarAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const heroIconScale = heroAvatarAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.92],
+  });
+  const heroMangaScale = heroAvatarAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.92, 1],
+  });
+  const heroMangaRotate = heroAvatarSpinAnim.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: ['0deg', '360deg', '720deg'],
+  });
 
  
 // 1. BACKUP: Copia exata dos dados do sininho
@@ -3631,7 +3700,32 @@ const handleBackupAllData = async (filteredPendingData = []) => {
         <View style={styles.profileHeroCard}>
           <View style={styles.profileHeroHeaderRow}>
             <View style={styles.profileHeroIconWrap}>
-              <MaterialIcons name="person-outline" size={46} color="#2F6A35" />
+              <Animated.View
+                style={[
+                  styles.profileHeroAvatarLayer,
+                  {
+                    opacity: heroIconOpacity,
+                    transform: [{ scale: heroIconScale }],
+                  },
+                ]}
+              >
+                <MaterialIcons name="person-outline" size={46} color="#2F6A35" />
+              </Animated.View>
+              <Animated.View
+                style={[
+                  styles.profileHeroAvatarLayer,
+                  {
+                    opacity: heroAvatarAnim,
+                    transform: [{ scale: heroMangaScale }, { rotate: heroMangaRotate }],
+                  },
+                ]}
+              >
+                <Image
+                  source={require('../../../assets/logomanga.png')}
+                  style={styles.profileHeroMangaImage}
+                  resizeMode="contain"
+                />
+              </Animated.View>
             </View>
             <View style={styles.profileHeroTextCol}>
               <Text style={styles.profileHeroName}>Olá, {profileName}!</Text>
@@ -3666,29 +3760,29 @@ const handleBackupAllData = async (filteredPendingData = []) => {
 
 <TouchableOpacity
   style={styles.card}
-  onPress={() => navigation.navigate('MaturacaoForcada')}
-  activeOpacity={0.8}
-  delayPressIn={0}
-  delayPressOut={0}
->
-  <Image source={require('../../assets/maturacao.png')} style={styles.cardImage} resizeMode="cover" />
-  <View style={styles.cardContent}>
-    <Text style={styles.cardTitle}>Análise de Maturação Forçada</Text>
-    <Text style={styles.cardText}>Registrar análises de maturação, anexar fotos e gerar relatório em PDF</Text>
-  </View>
-</TouchableOpacity>
-
-<TouchableOpacity
-  style={styles.card}
   onPress={() => navigation.navigate('RelatorioEmbarqueSede')}
   activeOpacity={0.8}
   delayPressIn={0}
   delayPressOut={0}
 >
-  <Image source={require('../../assets/embarquecard.png')} style={styles.cardImage} resizeMode="cover" />
+  <Image source={require('../../assets/embarquecard.png')} style={[styles.cardImage, { opacity: 0.5 }]} resizeMode="cover" />
   <View style={styles.cardContent}>
-    <Text style={styles.cardTitle}>Relatorio de Embarque</Text>
-    <Text style={styles.cardText}>Registrar informações de embarque, conferência de cargas e geração de relatório</Text>
+    <Text style={[styles.cardTitle, { opacity: 0.5 }]}>Relatorio de Embarque</Text>
+    <Text style={[styles.cardText, { opacity: 0.5 }]}>Registrar informações de embarque, conferência de cargas e geração de relatório</Text>
+  </View>
+</TouchableOpacity>
+
+<TouchableOpacity
+  style={styles.card}
+  onPress={() => navigation.navigate('MaturacaoForcada')}
+  activeOpacity={0.8}
+  delayPressIn={0}
+  delayPressOut={0}
+>
+  <Image source={require('../../assets/maturacao.png')} style={[styles.cardImage, { opacity: 0.5 }]} resizeMode="cover" />
+  <View style={styles.cardContent}>
+    <Text style={[styles.cardTitle, { opacity: 0.5 }]}>Análise de Maturação Forçada</Text>
+    <Text style={[styles.cardText, { opacity: 0.5 }]}>Registrar análises de maturação, anexar fotos e gerar relatório em PDF</Text>
   </View>
 </TouchableOpacity>
 
@@ -4411,10 +4505,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
+    position: 'relative',
+  },
+  profileHeroAvatarLayer: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileHeroMangaImage: {
+    width: 46,
+    height: 46,
   },
   profileHeroName: {
     fontSize: 18,
-    color: '#0F172A',
+    color: '#1B5E20',
     fontWeight: '800',
     textAlign: 'left',
     marginBottom: 3,

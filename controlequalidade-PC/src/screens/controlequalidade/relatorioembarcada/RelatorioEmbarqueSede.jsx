@@ -1231,7 +1231,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
       .catch(() => {});
     // Busca da API externa (navios da frota) + backend local (cadastrados pelo usuário)
     Promise.allSettled([
-      fetch('http://10.107.114.11:3002/navios').then((r) => r.json()),
+      fetch('http://10.107.114.11:5151/navios').then((r) => r.json()),
       api.get('/navios'),
     ]).then(([extResult, localResult]) => {
       const fromExt = extResult.status === 'fulfilled' && Array.isArray(extResult.value)
@@ -1513,16 +1513,6 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         encoding: FileSystem.EncodingType.UTF8,
       });
 
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Compartilhar PDF de Fotos',
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        Alert.alert('PDF gerado', `Arquivo salvo: ${fileName}`);
-      }
-
       let backendMessage = '';
       let backendSent = false;
       try {
@@ -1766,6 +1756,17 @@ export default function RelatorioEmbarqueSede({ navigation }) {
   const handleMainAction = async () => {
     if (step === 2 && mangaSections.length === 0) {
       Alert.alert('Obrigatorio', 'Selecione ao menos uma variedade para continuar.');
+      return;
+    }
+
+    if (step === 0) {
+      const subFlow = ['informacoes', 'mangas', 'container'];
+      const currentIdx = subFlow.indexOf(generalInfoTab);
+      if (currentIdx >= 0 && currentIdx < subFlow.length - 1) {
+        handleGeneralInfoTabPress(subFlow[currentIdx + 1]);
+        return;
+      }
+      await enviarRelatorio();
       return;
     }
 
@@ -2334,7 +2335,8 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         pallets.map((p) => api.get('/pallet-dados', { params: { pallet: p?.palletId } })),
       );
 
-      resultados.forEach((resultado) => {
+      const palletsDados = [];
+      resultados.forEach((resultado, idx) => {
         if (resultado.status !== 'fulfilled') return;
         const res = resultado.value;
         const rows = Array.isArray(res?.data)
@@ -2343,8 +2345,20 @@ export default function RelatorioEmbarqueSede({ navigation }) {
 
         rows.forEach((row) => {
           addControle(row?.CONTROLE || row?.controle || row?.CONTROLE_TALHAO || row?.controle_talhao);
+          palletsDados.push({
+            planpal: pallets[idx]?.palletId,
+            oc: row?.PLANCARREG_IN_CODIGO ?? row?.oc,
+            container: row?.PLANCARREG_ST_NROCONTAINER ?? row?.container,
+            controle: row?.CONTROLE ?? row?.controle ?? row?.COMPA_IN_NROCONTROLE,
+            variedade: row?.VARIEDADE ?? row?.variedade,
+            fazenda: row?.FAZENDA ?? row?.fazenda,
+            talhao: row?.TALHAO ?? row?.talhao,
+            qtd_caixas: row?.QTD_CAIXAS ?? row?.qtd_caixas,
+            etiqueta: row?.ETIQUETA ?? row?.etiqueta,
+          });
         });
       });
+
     }
 
     return Array.from(controles);
@@ -2425,37 +2439,82 @@ export default function RelatorioEmbarqueSede({ navigation }) {
     setImprimirMangaFotos({ loading: true, data: {} });
     try {
       const baseUrl = (api.getCurrentURL() || '').replace(/\/api$/, '');
-      const controles = await obterControlesDoCarregamento(carreg);
-      if (!controles.length) {
+      const pallets = Array.isArray(carreg?.pallets) ? carreg.pallets : [];
+
+      // Busca pallet-dados para enriquecer controle + variedade + qtd_caixas
+      const resultadosPallets = await Promise.allSettled(
+        pallets.map((p) => api.get('/pallet-dados', { params: { pallet: p?.palletId } }))
+      );
+
+      // Agrupa por controle somando qtd_caixas
+      const controleMap = {};
+      resultadosPallets.forEach((r, idx) => {
+        const pallet = pallets[idx];
+        const rows = r.status === 'fulfilled'
+          ? (Array.isArray(r.value?.data) ? r.value.data : [])
+          : [];
+        const row = rows[0] || {};
+        const controle = String(
+          row?.CONTROLE ?? row?.controle ?? row?.COMPA_IN_NROCONTROLE ?? pallet?.controle ?? ''
+        ).trim();
+        const variedade = String(
+          row?.VARIEDADE ?? row?.variedade ?? pallet?.variedade ?? ''
+        ).trim();
+        const qtd = Number(row?.QTD_CAIXAS ?? row?.qtd_caixas ?? pallet?.qtdCaixas ?? 0);
+        if (!controle) return;
+        if (!controleMap[controle]) {
+          controleMap[controle] = { controle, variedade, qtd_caixas: 0 };
+        }
+        controleMap[controle].qtd_caixas += qtd;
+      });
+
+      // Fallback: usa obterControlesDoCarregamento se pallet-dados não retornou nada
+      let opcoes = Object.values(controleMap);
+      if (!opcoes.length) {
+        const controles = await obterControlesDoCarregamento(carreg);
+        controles.forEach((c) => {
+          const pallet = pallets.find((p) => String(p.controle) === String(c));
+          controleMap[c] = {
+            controle: c,
+            variedade: pallet?.variedade || '',
+            qtd_caixas: pallets
+              .filter((p) => String(p.controle) === String(c))
+              .reduce((s, p) => s + Number(p.qtdCaixas || 0), 0),
+          };
+        });
+        opcoes = Object.values(controleMap);
+      }
+
+      if (!opcoes.length) {
         setImprimirMangaFotos({ loading: false, data: {} });
         return;
       }
 
-      const resultados = await Promise.allSettled(
-        controles.map((controle) => api.get('/manga-fotos', { params: { controle } })),
-      );
+      // Seleciona o controle com maior qtd_caixas total (empate = qualquer um)
+      const melhor = opcoes.reduce((a, b) => b.qtd_caixas >= a.qtd_caixas ? b : a);
 
-      const acumulado = {};
-      MANGA_FOTO_ITEMS.forEach(({ key }) => { acumulado[key] = []; });
+      console.log('\n===== [FotosPorControle] Controle selecionado =====');
+      console.log(JSON.stringify({ opcoes, selecionado: melhor }, null, 2));
+      console.log('===================================================\n');
 
-      resultados.forEach((resultado) => {
-        if (resultado.status !== 'fulfilled') return;
-        const fotosPorCampo = normalizeMangaFotosByCampo(
-          resultado.value?.fotos || resultado.value?.data?.fotos || {},
-          baseUrl,
-        );
-        MANGA_FOTO_ITEMS.forEach(({ key }) => {
-          const filtradas = filtrarFotosMangaPorControle(fotosPorCampo[key] || [], controles);
-          acumulado[key].push(...filtradas);
-        });
+      const res = await api.get('/analise-frutos/fotos-por-controle', {
+        params: { controle: melhor.controle, variedade: melhor.variedade },
       });
 
-      MANGA_FOTO_ITEMS.forEach(({ key }) => {
-        acumulado[key] = [...new Set(acumulado[key])];
-      });
+      const acumulado = {
+        appearance: [],
+        pulp_temperature: [],
+        maturity: (res?.maturacao || res?.data?.maturacao || []).map((u) => toAbsoluteApiUrl(baseUrl, u)),
+        firmness: (res?.firmeza || res?.data?.firmeza || []).map((u) => toAbsoluteApiUrl(baseUrl, u)),
+      };
+
+      console.log('\n===== [FotosPorControle] URLs montadas =====');
+      console.log(JSON.stringify({ controle: melhor.controle, variedade: melhor.variedade, fotos: acumulado }, null, 2));
+      console.log('============================================\n');
 
       setImprimirMangaFotos({ loading: false, data: acumulado });
-    } catch {
+    } catch (e) {
+      console.warn('[FotosPorControle] Erro:', e?.message);
       setImprimirMangaFotos({ loading: false, data: {} });
     }
   };
@@ -2682,7 +2741,8 @@ export default function RelatorioEmbarqueSede({ navigation }) {
   const fetchCarregamentos = async () => {
     setCarregamentosLoading(true);
     try {
-      const res = await api.get('/carregamentos');
+      // Oracle/ERP pode demorar mais para responder; usa timeout maior apenas nesta rota.
+      const res = await api.get('/carregamentos', { timeout: 90000 });
       const raw = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       // Agrupar por PLANCARREG_IN_CODIGO (cada carregamento = 1 container)
       const grouped = {};
@@ -2721,7 +2781,13 @@ export default function RelatorioEmbarqueSede({ navigation }) {
       });
       setCarregamentos(sorted);
     } catch (err) {
-      console.error('[Carregamentos] Erro:', err.message);
+      const message = String(err?.message || '');
+      const isTimeout = err?.code === 'ECONNABORTED' || /timeout/i.test(message);
+      console.error('[Carregamentos] Erro:', message || err);
+      if (isTimeout) {
+        Alert.alert('Carregamentos', 'A consulta demorou para responder. Tente atualizar novamente em instantes.');
+        return;
+      }
       Alert.alert('Erro', 'Não foi possível buscar carregamentos.');
       setCarregamentos([]);
     } finally {
@@ -3159,18 +3225,62 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         pallets.map((p) => api.get('/pallet-dados', { params: { pallet: p?.palletId } })),
       );
 
-      resultados.forEach((resultado) => {
-        if (resultado.status !== 'fulfilled') return;
+      const palletEnriquecido = [];
+      resultados.forEach((resultado, idx) => {
+        const pallet = pallets[idx];
+        const base = {
+          planpal: pallet?.palletId,
+          controle: pallet?.controle,
+          variedade: pallet?.variedade,
+          qtd_caixas: pallet?.qtdCaixas,
+          etiqueta: pallet?.etiqueta,
+        };
+        if (resultado.status !== 'fulfilled') {
+          palletEnriquecido.push(base);
+          return;
+        }
         const res = resultado.value;
         const rows = Array.isArray(res?.data)
           ? res.data
           : (Array.isArray(res) ? res : (Array.isArray(res?.rows) ? res.rows : []));
-
-        rows.forEach((row) => {
-          const v = normalizarTextoUpper(row?.VARIEDADE || row?.variedade);
-          if (v) variedades.add(v);
+        const row = rows[0];
+        const v = normalizarTextoUpper(row?.VARIEDADE || row?.variedade);
+        if (v) variedades.add(v);
+        palletEnriquecido.push({
+          planpal: pallet?.palletId,
+          controle: row?.CONTROLE ?? row?.controle ?? row?.COMPA_IN_NROCONTROLE ?? pallet?.controle,
+          variedade: row?.VARIEDADE ?? row?.variedade ?? pallet?.variedade,
+          fazenda: row?.FAZENDA ?? row?.fazenda,
+          qtd_caixas: row?.QTD_CAIXAS ?? row?.qtd_caixas ?? pallet?.qtdCaixas,
+          etiqueta: row?.ETIQUETA ?? row?.etiqueta ?? pallet?.etiqueta,
         });
       });
+
+      console.log('\n========== [Container Selecionado] ==========');
+      console.log(JSON.stringify({
+        oc: carreg.id,
+        container: carreg.container,
+        apelido: carreg.apelido,
+        total_pallets: palletEnriquecido.length,
+        pallets: palletEnriquecido,
+      }, null, 2));
+      console.log('=============================================\n');
+    } else {
+      console.log('\n========== [Container Selecionado] ==========');
+      console.log(JSON.stringify({
+        oc: carreg.id,
+        container: carreg.container,
+        apelido: carreg.apelido,
+        total_pallets: pallets.length,
+        pallets: pallets.map((p) => ({
+          planpal: p.palletId,
+          controle: p.controle,
+          variedade: p.variedade,
+          qtd_caixas: p.qtdCaixas,
+          etiqueta: p.etiqueta,
+        })),
+      }, null, 2));
+      console.log('=============================================\n');
     }
 
     return Array.from(variedades);
@@ -3178,6 +3288,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
 
   const aplicarContainerInformacoes = async (carreg) => {
     if (!carreg) return;
+
 
     setContainerSelecionadoKey(obterChaveCarregamento(carreg));
     setGeneralInfoField('container', obterLabelCarregamento(carreg));
@@ -3760,19 +3871,13 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-
       <TouchableOpacity
-        style={[st.fabTest, (isGeneratingPdf || isTestingPdf) && { opacity: 0.6 }]}
-        onPress={gerarPdfTeste}
-        activeOpacity={0.85}
-        disabled={isGeneratingPdf || isTestingPdf}
-      >
-        <MaterialIcons name="picture-as-pdf" size={20} color="#FFFFFF" />
-        <Text style={st.fabTestText}>{isTestingPdf ? 'Gerando...' : 'Teste PDF'}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[st.fab, step === TOP_FLOW_LAST_INDEX && { backgroundColor: ORANGE }, (isGeneratingPdf || isTestingPdf) && { opacity: 0.6 }]}
+        style={[
+          st.fab,
+          step === TOP_FLOW_LAST_INDEX && st.fabFinalLeft,
+          step === TOP_FLOW_LAST_INDEX && { backgroundColor: ORANGE },
+          (isGeneratingPdf || isTestingPdf) && { opacity: 0.6 },
+        ]}
         onPress={handleMainAction}
         activeOpacity={0.85}
         disabled={isGeneratingPdf || isTestingPdf}
@@ -3781,20 +3886,11 @@ export default function RelatorioEmbarqueSede({ navigation }) {
           <ActivityIndicator color="#FFFFFF" size="small" />
         ) : (
           <MaterialIcons
-            name={step === TOP_FLOW_LAST_INDEX ? 'send' : 'arrow-forward'}
-            size={20}
+            name={step === 0 && generalInfoTab === 'container' ? 'send' : step === TOP_FLOW_LAST_INDEX ? 'send' : 'arrow-forward'}
+            size={30}
             color="#FFFFFF"
           />
         )}
-        <Text style={st.fabText}>
-          {isGeneratingPdf
-            ? 'Enviando...'
-            : isTestingPdf
-              ? 'Gerando...'
-            : step === TOP_FLOW_LAST_INDEX
-              ? 'Enviar'
-              : 'Avançar'}
-        </Text>
       </TouchableOpacity>
 
       {/* Modal Galeria de Fotos por Fazenda */}
@@ -5892,8 +5988,8 @@ const st = StyleSheet.create({
     bottom: 80,
     backgroundColor: GREEN,
     borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -5903,6 +5999,10 @@ const st = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 6,
     zIndex: 50,
+  },
+  fabFinalLeft: {
+    left: 14,
+    right: 'auto',
   },
   fabTest: {
     position: 'absolute',

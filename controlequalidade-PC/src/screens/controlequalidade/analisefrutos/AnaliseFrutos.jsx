@@ -9,11 +9,16 @@
 
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { WebView } from 'react-native-webview';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Keyboard,
@@ -35,7 +40,9 @@ import { useAuth } from '../../../context/AuthContext.js';
 import api from '../../../services/api.js';
 
 const GREEN = '#2E7D32';
-const STEPS_TOTAL = 3;
+const ORANGE = '#F39C12';
+const LGREEN = '#E8F5E9';
+const STEPS_TOTAL = 4;
 
 const VARIEDADES = ['KENT', 'KEITT', 'TOMMY ATKINS', 'PALMER', 'OSTEEN', 'OMER', 'NOA', 'SHELLY'];
 const LISTA_VALORES_SQL = 'SELECT * FROM AGDTI.DXDW_FORMS_TOT_VALOR';
@@ -51,12 +58,14 @@ const CRITERIOS_BASE = ['Penetrometria', 'Brix', 'Matéria Seca'];
 const CRITERIOS_PRE_COLHEITA = [...CRITERIOS_BASE, 'Maturação'];
 const CRITERIOS_LOTE = [...CRITERIOS_BASE, 'Peso (g)', 'Maturação'];
 const CACHE_TALHOES_KEY = '@analise_frutos:talhoes';
+const FAZENDA_TALHAO_LISTA_DESCRICAO = 'lista_fazenda_talhao';
 const CACHE_TIPOS_ANALISE_KEY = '@analise_frutos:tipos_analise';
 const DANOS_LISTA_DESCRICAO = 'lista_danos_internos';
 const CACHE_DANOS_KEY = '@analise_frutos:danos';
 const ANALISE_FRUTOS_OFFLINE_KEY = 'analise_frutos_offline';
-const STEPS = ['Cabeçalho', 'Fotos', 'Lotes'];
+const STEPS = ['Cabeçalho', 'Fotos', 'Lotes', 'Prévia'];
 const HISTORY_LIMIT = 100;
+const FOTOS_CACHE_DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}fotos_analise_cache/` : null;
 
 const PRODUCAO_FOTO_CAMPOS = [
   { key: 'firmeza', label: 'Firmeza' },
@@ -73,16 +82,19 @@ function formatDate(date = new Date()) {
   return `${day}/${month}/${year}`;
 }
 
-// Calcula o número da semana do ano a partir de uma string de data dd/mm/aaaa.
+// Calcula o número da semana ISO 8601 a partir de uma string de data dd/mm/aaaa.
 function getWeekNumber(dateStr) {
   try {
     const [day, month, year] = String(dateStr).split('/');
     if (!day || !month || !year) return '';
-    const date = new Date(`${year}-${month}-${day}`);
-    if (isNaN(date.getTime())) return '';
-    const startOfYear = new Date(date.getFullYear(), 0, 1);
-    const oneWeek = 7 * 24 * 60 * 60 * 1000;
-    return String(Math.ceil(((date - startOfYear) / oneWeek) + 1));
+    const d = new Date(`${year}-${month}-${day}`);
+    if (isNaN(d.getTime())) return '';
+    const date = new Date(d);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
+    const yearStart = new Date(date.getFullYear(), 0, 4);
+    const week = 1 + Math.round(((date - yearStart) / 86400000 - 3 + ((yearStart.getDay() + 6) % 7)) / 7);
+    return String(week);
   } catch {
     return '';
   }
@@ -119,9 +131,102 @@ function createFruitEntries(start, end) {
 
 // Normaliza o nome da fazenda para maiusculo, unificando variacoes de "Frutos da Ilha".
 function normalizeFarmName(value = '') {
-  const name = String(value || '').trim().toUpperCase();
+  const name = String(value || '')
+    .trim()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase();
   if (name === 'FRUTOS DA ILHA 1' || name === 'FRUTOS DA ILHA 2') return 'FRUTOS DA ILHA';
   return name;
+}
+
+const MONTHS_PT_AF = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const DAYS_PT_AF   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+const calStAF = StyleSheet.create({
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  monthYear:    { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
+  dayRow:       { flexDirection: 'row', marginBottom: 4 },
+  dayName:      { width: '14.28%', textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#AAAAAA', paddingVertical: 4 },
+  grid:         { flexDirection: 'row', flexWrap: 'wrap' },
+  cell:         { width: '14.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center' },
+  cellSel:      { backgroundColor: '#2E7D32', borderRadius: 999 },
+  cellToday:    { borderWidth: 1.5, borderColor: '#2E7D32', borderRadius: 999 },
+  cellTxt:      { fontSize: 14, color: '#222' },
+  cellTxtSel:   { color: '#fff', fontWeight: '700' },
+  cellTxtToday: { color: '#2E7D32', fontWeight: '700' },
+});
+
+function CustomCalendarAF({ value, onChange }) {
+  const today = new Date();
+  const initial = value instanceof Date ? value : today;
+  const [viewYear, setViewYear] = useState(initial.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initial.getMonth());
+
+  useEffect(() => {
+    if (value instanceof Date) { setViewYear(value.getFullYear()); setViewMonth(value.getMonth()); }
+  }, [value]);
+
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const selDay   = value instanceof Date ? value.getDate()     : null;
+  const selMonth = value instanceof Date ? value.getMonth()    : null;
+  const selYear  = value instanceof Date ? value.getFullYear() : null;
+
+  return (
+    <View>
+      <View style={calStAF.header}>
+        <TouchableOpacity onPress={() => { if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); } else setViewMonth(m => m - 1); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <MaterialIcons name="chevron-left" size={28} color="#333" />
+        </TouchableOpacity>
+        <Text style={calStAF.monthYear}>{MONTHS_PT_AF[viewMonth]} {viewYear}</Text>
+        <TouchableOpacity onPress={() => { if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); } else setViewMonth(m => m + 1); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <MaterialIcons name="chevron-right" size={28} color="#333" />
+        </TouchableOpacity>
+      </View>
+      <View style={calStAF.dayRow}>
+        {DAYS_PT_AF.map(d => <Text key={d} style={calStAF.dayName}>{d}</Text>)}
+      </View>
+      <View style={calStAF.grid}>
+        {cells.map((day, idx) => {
+          if (!day) return <View key={`e${idx}`} style={calStAF.cell} />;
+          const isSel = day === selDay && viewMonth === selMonth && viewYear === selYear;
+          const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
+          return (
+            <TouchableOpacity key={`d${day}`} style={[calStAF.cell, isSel && calStAF.cellSel, !isSel && isToday && calStAF.cellToday]} onPress={() => onChange(new Date(viewYear, viewMonth, day))} activeOpacity={0.7}>
+              <Text style={[calStAF.cellTxt, isSel && calStAF.cellTxtSel, !isSel && isToday && calStAF.cellTxtToday]}>{day}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function DateModalAF({ visible, current, onConfirm, onClose }) {
+  const [temp, setTemp] = useState(current instanceof Date ? current : new Date());
+  useEffect(() => { if (visible) setTemp(current instanceof Date ? current : new Date()); }, [visible]);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' }} onPress={onClose}>
+        <Pressable style={{ backgroundColor: '#fff', borderRadius: 12, padding: 20, width: 320, maxWidth: '92%' }} onPress={e => e.stopPropagation()}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 16, textAlign: 'center' }}>Selecionar Data</Text>
+          <CustomCalendarAF value={temp} onChange={setTemp} />
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+            <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#CCC', alignItems: 'center' }} onPress={onClose}>
+              <Text style={{ color: '#555', fontWeight: '600' }}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#2E7D32', alignItems: 'center' }} onPress={() => { onConfirm(temp); onClose(); }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Confirmar</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 }
 
 // Retorna o estado inicial do cabecalho do formulario com a data de hoje e a fazenda do usuario.
@@ -131,6 +236,7 @@ function createInitialHeader(userFarm = '') {
     tipo_analise: '',
     fazenda_talhao: '',
     talhao: '',
+    safra: 'M26',
     semana: getWeekNumber(today),
     data: today,
     controle: '',
@@ -368,14 +474,17 @@ function extractTalhoesList(responseData) {
 function mergeTalhoesLists(...lists) {
   const mergedMap = new Map();
 
+  const INVALIDOS = /^sem[_\s](fazenda|talhao|nome|variedade)$/i;
+
   lists
     .flat()
     .forEach((item) => {
       if (!item || typeof item !== 'object') return;
       const fazenda = String(item?.fazenda || '').trim();
-      if (!fazenda) return;
+      if (!fazenda || INVALIDOS.test(fazenda)) return;
       const talhao = String(item?.talhao || '').trim();
-      const key = `${normalizeFarmName(fazenda)}::${talhao.toUpperCase()}`;
+      if (INVALIDOS.test(talhao)) return;
+      const key = `${normalizeFarmName(fazenda)}::${normalizeFarmName(talhao)}`;
       mergedMap.set(key, { ...item, fazenda, talhao });
     });
 
@@ -611,13 +720,18 @@ export default function AnaliseFrutos({ navigation }) {
   const [showFarmModal, setShowFarmModal] = useState(false);
   const [showTalhaoModal, setShowTalhaoModal] = useState(false);
   const [showVarModal, setShowVarModal] = useState(false);
-  const [showCriterioModal, setShowCriterioModal] = useState(false);
   const [showTipoModal, setShowTipoModal] = useState(false);
+  const [showDateModal, setShowDateModal] = useState(false);
   const [tiposAnaliseOptions, setTiposAnaliseOptions] = useState(() => [...TIPOS_ANALISE_PADRAO]);
   const [fotos, setFotos] = useState([]);
   const [fotosProducao, setFotosProducao] = useState({ ...INITIAL_FOTOS_PRODUCAO });
   const [saving, setSaving] = useState(false);
   const [testingPdf, setTestingPdf] = useState(false);
+  const [pdfBase64, setPdfBase64] = useState(null);
+  const [previewPdfUri, setPreviewPdfUri] = useState('');
+  const [previewPdfUrl, setPreviewPdfUrl] = useState('');
+
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [danosOptions, setDanosOptions] = useState([]);
   const [showDanosModal, setShowDanosModal] = useState(false);
   const [danosModalFruitIndex, setDanosModalFruitIndex] = useState(null);
@@ -634,10 +748,6 @@ export default function AnaliseFrutos({ navigation }) {
   const isProducao = isProducaoTipo(header.tipo_analise);
   const isAcompanhamento = isAcompanhamentoTipo(header.tipo_analise);
   const criteriosLoteOptions = isShelfLife ? CRITERIOS_BASE : (isPreColheita || isProducao || isAcompanhamento) ? CRITERIOS_PRE_COLHEITA : CRITERIOS_LOTE;
-  const criterioModalOptions = useMemo(
-    () => ['Selecione...', ...criteriosLoteOptions],
-    [criteriosLoteOptions],
-  );
   const loteRows = criteriosLoteOptions.flatMap((criterio) => fruits.map((fruit, fruitIndex) => ({
     fruitIndex,
     numero_fruto: fruit.numero_fruto,
@@ -646,6 +756,8 @@ export default function AnaliseFrutos({ navigation }) {
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = useRef(null);
+  const previewAutoRequestedRef = useRef(false);
+  const previewLogoRef = useRef('');
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
@@ -680,15 +792,44 @@ export default function AnaliseFrutos({ navigation }) {
           applyTalhoes(cachedList);
         }
       } catch {}
-      // Tenta atualizar da API
+      // Carrega apenas da Oracle (lista_fazenda_talhao) — sem misturar com /talhoes local
+      let listaFazendaTalhao = [];
+
       try {
-        const response = await api.get('/talhoes');
-        const list = extractTalhoesList(response);
-        const mergedList = mergeTalhoesLists(cachedList, list);
-        applyTalhoes(mergedList);
-        await AsyncStorage.setItem(CACHE_TALHOES_KEY, JSON.stringify(mergedList));
+        const responseListaValores = await api.get(LISTA_ENDPOINT_RELATIVO, {
+          params: { comando: LISTA_VALORES_SQL },
+        });
+        const rows = extractGenericRows(responseListaValores?.data ?? responseListaValores);
+        listaFazendaTalhao = rows
+          .filter((row) => String(getFieldValue(row, 'descricao_lista') || '').trim().toLowerCase() === FAZENDA_TALHAO_LISTA_DESCRICAO)
+          .map((row) => {
+            const valor = String(getFieldValue(row, 'valor') || '').trim();
+            const sepIdx = valor.indexOf(' - ');
+            if (sepIdx === -1) return { fazenda: valor, talhao: '' };
+            return {
+              fazenda: valor.substring(0, sepIdx).trim(),
+              talhao: valor.substring(sepIdx + 3).trim(),
+            };
+          })
+          .filter((item) => item.fazenda);
+
+        console.log('[AnaliseFrutos] Oracle lista_fazenda_talhao:', listaFazendaTalhao.length, 'itens');
+      } catch (e) {
+        console.warn('[AnaliseFrutos] Falha ao carregar lista_fazenda_talhao:', e?.message);
+      }
+
+      try {
+        if (listaFazendaTalhao.length > 0) {
+          // Mescla Oracle com entradas locais do cache que não existem na Oracle
+          const finalList = mergeTalhoesLists(listaFazendaTalhao, cachedList);
+          applyTalhoes(finalList);
+          await AsyncStorage.setItem(CACHE_TALHOES_KEY, JSON.stringify(finalList));
+        } else if (cachedList.length > 0) {
+          // Offline: usa cache local
+          applyTalhoes(cachedList);
+        }
       } catch (error) {
-        console.warn('[AnaliseFrutos] Falha ao carregar talhoes da API, usando cache:', error?.message);
+        console.warn('[AnaliseFrutos] Falha ao aplicar listas de talhoes:', error?.message);
       } finally {
         if (mounted) setLoadingTalhoes(false);
       }
@@ -796,6 +937,14 @@ export default function AnaliseFrutos({ navigation }) {
     return () => { mounted = false; };
   }, []);
 
+  // Gera a prévia quando entra no passo 3
+  useEffect(() => {
+    if (step === 3 && !previewPdfUri && !previewPdfUrl && !isGeneratingPdf && !previewAutoRequestedRef.current) {
+      previewAutoRequestedRef.current = true;
+      gerarPdfParaVisualizacao();
+    }
+  }, [step, previewPdfUri, previewPdfUrl, isGeneratingPdf]);
+
   // Atualiza um campo especifico do cabecalho do formulario.
   const updateHeader = (key, value) => {
     setHeader((previous) => ({ ...previous, [key]: value }));
@@ -808,6 +957,14 @@ export default function AnaliseFrutos({ navigation }) {
     } catch {}
   };
 
+  const clearPreviewState = () => {
+    setPdfBase64(null);
+    setPreviewPdfUri('');
+    setPreviewPdfUrl('');
+    setIsGeneratingPdf(false);
+    previewAutoRequestedRef.current = false;
+  };
+
   const resetFormState = () => {
     setStep(0);
     setHeader(createInitialHeader(userFarm));
@@ -817,6 +974,7 @@ export default function AnaliseFrutos({ navigation }) {
     setEditingFormId('');
     setExistingFotosSalvas([]);
     setExistingFotosProducao({ ...INITIAL_FOTOS_PRODUCAO });
+    clearPreviewState();
   };
 
   const saveOfflineAnaliseFrutos = async (payload) => {
@@ -881,44 +1039,31 @@ export default function AnaliseFrutos({ navigation }) {
     if (week) updateHeader('semana', week);
   };
 
-  // Ajusta a lista de frutos para a quantidade informada, pedindo confirmacao ao reduzir.
-  const adjustFruitList = (nextQty, { askConfirmation = true } = {}) => {
+  // Ajusta a lista de frutos para a quantidade informada sem pedir confirmacao.
+  const adjustFruitList = (nextQty) => {
     const safeQty = Math.max(0, nextQty || 0);
     const currentQty = fruits.length;
     if (safeQty === currentQty) return true;
     if (safeQty > currentQty) {
       setFruits((prev) => (safeQty <= prev.length ? prev : [...prev, ...createFruitEntries(prev.length + 1, safeQty)]));
-      return true;
-    }
-    if (!askConfirmation) {
+    } else {
       setFruits((prev) => prev.slice(0, safeQty));
-      return true;
     }
-    const startRemoved = safeQty + 1;
-    Alert.alert(
-      'Confirmar reducao',
-      `Voce alterou de ${currentQty} para ${safeQty} frutos. Remover frutos ${startRemoved} ate ${currentQty}?`,
-      [
-        { text: 'Cancelar', style: 'cancel', onPress: () => updateHeader('qtd_frutos', String(currentQty)) },
-        { text: 'Remover', style: 'destructive', onPress: () => setFruits((prev) => prev.slice(0, safeQty)) },
-      ]
-    );
-    return false;
+    return true;
   };
 
-  // Atualiza o campo de quantidade de frutos e expande a lista imediatamente se aumentar.
+  // Atualiza o campo de quantidade de frutos e ajusta a lista imediatamente.
   const handleQtdFrutosChange = (value) => {
     const sanitized = normalizeIntegerInput(value);
     updateHeader('qtd_frutos', sanitized);
     const nextQty = Number.parseInt(sanitized || '0', 10) || 0;
-    if (nextQty > fruits.length) adjustFruitList(nextQty, { askConfirmation: false });
+    adjustFruitList(nextQty);
   };
 
-  // Confirma a quantidade de frutos ao sair do campo, aplicando reducao com confirmacao se necessario.
+  // Confirma a quantidade de frutos ao sair do campo.
   const commitQtdFrutosChange = () => {
     const nextQty = Number.parseInt(header.qtd_frutos || '0', 10) || 0;
-    if (nextQty < fruits.length) return adjustFruitList(nextQty, { askConfirmation: true });
-    if (nextQty > fruits.length) adjustFruitList(nextQty, { askConfirmation: false });
+    adjustFruitList(nextQty);
     return true;
   };
 
@@ -976,6 +1121,8 @@ export default function AnaliseFrutos({ navigation }) {
       if (result.canceled) return;
       const uri = result.assets?.[0]?.uri;
       if (!uri) return;
+      const pMed = await MediaLibrary.requestPermissionsAsync();
+      if (pMed.granted) await MediaLibrary.saveToLibraryAsync(uri);
       setFotosProducao((prev) => ({ ...prev, [campo]: [...(prev[campo] || []), uri] }));
     } catch (error) {
       console.warn('[AnaliseFrutos] Camera producao:', error?.message);
@@ -1022,6 +1169,8 @@ export default function AnaliseFrutos({ navigation }) {
 
       const uri = result.assets?.[0]?.uri;
       if (!uri) return;
+      const pMed = await MediaLibrary.requestPermissionsAsync();
+      if (pMed.granted) await MediaLibrary.saveToLibraryAsync(uri);
       setFotos((current) => [...current, uri]);
     } catch (error) {
       console.warn('[AnaliseFrutos] Falha ao tirar foto:', error?.message);
@@ -1029,9 +1178,14 @@ export default function AnaliseFrutos({ navigation }) {
     }
   };
 
-  // O botao voltar do topo sempre retorna para Home, sem voltar entre etapas internas.
+  // Botao voltar: recua um step quando em etapas internas; navega para a tela anterior no step 0.
   const handleBack = () => {
-    navigation.navigate('Home');
+    if (step > 0) {
+      if (step === 3) clearPreviewState();
+      setStep(step - 1);
+    } else {
+      navigation.goBack();
+    }
   };
 
   const getRecordPayload = (record) => {
@@ -1106,6 +1260,7 @@ export default function AnaliseFrutos({ navigation }) {
       tipo_analise: payload.tipo_analise || '',
       fazenda_talhao: payload.fazenda_talhao || payload.fazenda || '',
       talhao: payload.talhao || '',
+      safra: payload.safra || 'M26',
       semana: payload.semana != null ? String(payload.semana) : '',
       data: payload.data || payload.data_ref || formatDate(new Date()),
       controle: payload.controle != null ? String(payload.controle) : '',
@@ -1155,10 +1310,17 @@ export default function AnaliseFrutos({ navigation }) {
       PRODUCAO_FOTO_CAMPOS.forEach(({ key }) => {
         const items = Array.isArray(savedProdFotos[key]) ? savedProdFotos[key] : [];
         restoredProdFotos[key] = items
-          .map((item) => ({ uri: buildAbsoluteApiUrl(item.url || ''), disk_path: item.disk_path || '', nome: item.nome || '' }))
+          .map((item) => ({
+            uri: buildAbsoluteApiUrl(item.url || ''),
+            url: item.url || '',
+            disk_path: item.disk_path || '',
+            nome: item.nome || '',
+          }))
           .filter((item) => item.uri);
       });
     }
+
+    const formId = String(record?.form_id || payload?.form_id || record?.id || '');
 
     setHeader({ ...restoredHeader, qtd_frutos: String(restoredFruits.length) });
     setFruits(restoredFruits);
@@ -1166,11 +1328,59 @@ export default function AnaliseFrutos({ navigation }) {
     setFotosProducao({ ...INITIAL_FOTOS_PRODUCAO });
     setExistingFotosSalvas(fotosSalvas);
     setExistingFotosProducao(restoredProdFotos);
-    setEditingFormId(String(record?.form_id || payload?.form_id || record?.id || ''));
+    setEditingFormId(formId);
+    clearPreviewState();
     setStep(0);
     setShowHistoryModal(false);
     setSelectedHistory(null);
-    Alert.alert('Modo edicao', 'Registro carregado. Altere os campos e salve para atualizar.');
+    // Em segundo plano: baixa fotos do servidor para cache local (celular).
+    // Na próxima edição usa o cache local; funciona offline após primeiro carregamento.
+    Promise.allSettled([
+      ...fotosSalvas.map((item) =>
+        getOrDownloadFotoCache(formId, item.nome, buildAbsoluteApiUrl(item.url || ''))
+          .then((localUri) => ({ tipo: 'geral', url: item.url, localUri }))
+      ),
+      ...PRODUCAO_FOTO_CAMPOS.flatMap(({ key }) =>
+        (restoredProdFotos[key] || []).map((item) =>
+          getOrDownloadFotoCache(`${formId}_${key}`, item.nome, item.uri)
+            .then((localUri) => ({ tipo: 'prod', key, nome: item.nome, localUri }))
+        )
+      ),
+    ]).then((results) => {
+      // Atualiza URIs das fotos gerais para cache local quando disponível
+      const geralMap = {};
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value?.tipo === 'geral' && r.value.localUri) {
+          geralMap[r.value.url] = r.value.localUri;
+        }
+      });
+      if (Object.keys(geralMap).length > 0) {
+        setExistingFotosSalvas((prev) =>
+          prev.map((item) => geralMap[item.url] ? { ...item, local_uri: geralMap[item.url] } : item)
+        );
+      }
+
+      // Atualiza URIs das fotos de produção para cache local quando disponível
+      const prodMap = {};
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value?.tipo === 'prod' && r.value.localUri) {
+          const k = `${r.value.key}__${r.value.nome}`;
+          prodMap[k] = r.value.localUri;
+        }
+      });
+      if (Object.keys(prodMap).length > 0) {
+        setExistingFotosProducao((prev) => {
+          const next = { ...prev };
+          PRODUCAO_FOTO_CAMPOS.forEach(({ key }) => {
+            next[key] = (prev[key] || []).map((item) => {
+              const k = `${key}__${item.nome}`;
+              return prodMap[k] ? { ...item, uri: prodMap[k] } : item;
+            });
+          });
+          return next;
+        });
+      }
+    }).catch(() => {});
   };
 
   const handleDeleteHistory = async (record) => {
@@ -1193,19 +1403,18 @@ export default function AnaliseFrutos({ navigation }) {
 
   // Monta o payload completo do formulario para envio/geracao de PDF.
   const buildPayload = () => {
-    const criterioPrincipal = criteriosLoteOptions.includes(header.criterio)
-      ? header.criterio
-      : (criteriosLoteOptions[0] || '');
+    const criterioPrincipal = criteriosLoteOptions[0] || '';
 
     return {
       ...header,
+      criterio: null,
       form_id: editingFormId || undefined,
       avaliador: String(user?.nome || user?.name || '').trim(),
       avaliado: 'Controle de qualidade - Packing Manga',
       qtd_frutos: fruits.length,
       semana: Number.parseInt(header.semana || '0', 10) || null,
       controle: Number.parseInt(header.controle || '0', 10) || null,
-      peso_final_caixa: toDecimalNumber(header.peso_final_caixa) ?? 0,
+      peso_final_caixa: null,
       fotos,
       fotos_count: fotos.length,
       fotos_salvas: existingFotosSalvas,
@@ -1241,18 +1450,138 @@ export default function AnaliseFrutos({ navigation }) {
     return `${baseOrigin}${prefix}${raw}`;
   };
 
-  // Abre/compartilha o PDF de teste retornado pelo backend.
-  const openTestePdf = async (pdfUrl) => {
-    const absoluteUrl = buildAbsoluteApiUrl(pdfUrl);
-    if (!absoluteUrl) {
-      throw new Error('URL do PDF de teste nao retornada pelo backend.');
+  const guessImageMime = (uri = '') => {
+    const lower = String(uri || '').toLowerCase();
+    if (lower.includes('.png')) return 'image/png';
+    if (lower.includes('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  };
+
+  const resolveLogoPreviewSrc = async () => {
+    if (previewLogoRef.current) return previewLogoRef.current;
+    try {
+      const asset = Asset.fromModule(require('../../../assets/logoagrodann.png'));
+      if (!asset.localUri) await asset.downloadAsync();
+      const logoUri = asset.localUri || asset.uri;
+      if (!logoUri) return '';
+      const base64 = await FileSystem.readAsStringAsync(logoUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const dataUri = `data:image/png;base64,${base64}`;
+      previewLogoRef.current = dataUri;
+      return dataUri;
+    } catch {
+      return '';
+    }
+  };
+
+  const resolvePhotoPreviewSrc = async (uri = '') => {
+    const raw = String(uri || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('data:') || /^https?:\/\//i.test(raw)) return raw;
+    try {
+      const base64 = await FileSystem.readAsStringAsync(raw, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      return `data:${guessImageMime(raw)};base64,${base64}`;
+    } catch {
+      return raw;
+    }
+  };
+
+  const dedupeUris = (uris = []) => {
+    const seen = new Set();
+    const result = [];
+    uris.forEach((value) => {
+      const uri = String(value || '').trim();
+      if (!uri || seen.has(uri)) return;
+      seen.add(uri);
+      result.push(uri);
+    });
+    return result;
+  };
+
+  const buildPreviewPhotoCards = () => {
+    const cards = [];
+    const pushCards = (baseLabel, uris = []) => {
+      if (!baseLabel || !uris.length) return;
+      uris.forEach((uri, index) => {
+        const label = uris.length > 1 ? `${baseLabel} ${index + 1}` : baseLabel;
+        cards.push({ label, uri });
+      });
+    };
+
+    // Fotos por campo (produção)
+    PRODUCAO_FOTO_CAMPOS.forEach(({ key, label }) => {
+      const atuais = (fotosProducao?.[key] || [])
+        .map((item) => (typeof item === 'string' ? item : item?.uri))
+        .filter(Boolean);
+      const salvas = (existingFotosProducao?.[key] || [])
+        .map((item) => item?.local_uri || item?.uri || '')
+        .filter(Boolean);
+      const merged = dedupeUris([...atuais, ...salvas]);
+      pushCards(label, merged);
+    });
+
+    // Fotos gerais
+    const geraisAtuais = (fotos || []).map((item) => String(item || '').trim()).filter(Boolean);
+    const geraisSalvas = (existingFotosSalvas || [])
+      .map((item) => item?.local_uri || item?.uri || buildAbsoluteApiUrl(item?.url || item?.caminho_relativo || ''))
+      .filter(Boolean);
+    const gerais = dedupeUris([...geraisAtuais, ...geraisSalvas]);
+    if (gerais.length) {
+      const baseLabel = cards.length ? 'Foto Geral' : 'Foto';
+      pushCards(baseLabel, gerais);
     }
 
-    if (await Sharing.isAvailableAsync()) {
+    return cards;
+  };
+
+  const resolvePreviewAssets = async () => {
+    const photoCards = buildPreviewPhotoCards();
+    const [logoSrc, resolvedCards] = await Promise.all([
+      resolveLogoPreviewSrc(),
+      Promise.all(photoCards.map(async (card) => {
+        const src = await resolvePhotoPreviewSrc(card.uri);
+        if (!src) return null;
+        return { ...card, src };
+      })),
+    ]);
+    return { logoSrc, photoCards: resolvedCards.filter(Boolean) };
+  };
+
+  // Tenta obter foto do cache local (celular); se não existir, baixa do servidor e salva no cache.
+  const getOrDownloadFotoCache = async (subDir, nome, serverUrl) => {
+    if (!FOTOS_CACHE_DIR || !subDir || !nome || !serverUrl) return null;
+    const cacheDir = `${FOTOS_CACHE_DIR}${subDir}/`;
+    const localPath = `${cacheDir}${nome}`;
+    try {
+      const info = await FileSystem.getInfoAsync(localPath);
+      if (info.exists) return localPath;
+      await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+      const result = await FileSystem.downloadAsync(serverUrl, localPath);
+      if (result.status === 200) return localPath;
+    } catch {}
+    return null;
+  };
+
+  // Abre/compartilha o PDF de teste retornado pelo backend.
+  const openTestePdf = async (pdfUrl, localFileUri = '') => {
+    const absoluteUrl = buildAbsoluteApiUrl(pdfUrl);
+    let shareUri = String(localFileUri || '').trim();
+
+    if (!shareUri) {
+      if (!absoluteUrl) {
+        throw new Error('URL do PDF de teste nao retornada pelo backend.');
+      }
       const fileName = `analise_frutos_teste_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
       const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
       const downloaded = await FileSystem.downloadAsync(absoluteUrl, fileUri);
-      await Sharing.shareAsync(downloaded.uri, {
+      shareUri = downloaded.uri;
+    }
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(shareUri, {
         mimeType: 'application/pdf',
         dialogTitle: 'Teste do PDF - Analise de Frutos',
         UTI: 'com.adobe.pdf',
@@ -1260,18 +1589,20 @@ export default function AnaliseFrutos({ navigation }) {
       return;
     }
 
-    const canOpen = await Linking.canOpenURL(absoluteUrl);
-    if (canOpen) {
-      await Linking.openURL(absoluteUrl);
-      return;
+    if (absoluteUrl) {
+      const canOpen = await Linking.canOpenURL(absoluteUrl);
+      if (canOpen) {
+        await Linking.openURL(absoluteUrl);
+        return;
+      }
     }
 
     throw new Error('Nao foi possivel abrir o PDF de teste neste dispositivo.');
   };
 
   // Gera PDF de teste sem salvar registro definitivo.
-  // Monta FormData a partir do payload para envio multipart (com fotos).
-  const buildFormData = (payload) => {
+  // Monta FormData a partir do payload para envio multipart.
+  const buildFormData = (payload, { includePhotos = true } = {}) => {
     const formData = new FormData();
     Object.entries(payload).forEach(([key, value]) => {
       if (key === 'fotos' || key === 'fotos_producao') return;
@@ -1281,6 +1612,7 @@ export default function AnaliseFrutos({ navigation }) {
         formData.append(key, value == null ? '' : String(value));
       }
     });
+    if (!includePhotos) return formData;
     (payload.fotos || []).forEach((uri, idx) => {
       if (!uri) return;
       const ext = String(uri).split('.').pop()?.toLowerCase() || 'jpg';
@@ -1307,6 +1639,23 @@ export default function AnaliseFrutos({ navigation }) {
     return formData;
   };
 
+  const gerarPdfTesteNoBackend = async ({ includePhotos = true } = {}) => {
+    const formData = buildFormData(buildPayload(), { includePhotos });
+    const response = await api.post('/analise-frutos/teste-pdf', formData, {
+      timeout: 120000,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    const pdfUrl = response?.pdf_url || response?.data?.pdf_url;
+    const absoluteUrl = buildAbsoluteApiUrl(pdfUrl);
+    const cacheBustedUrl = absoluteUrl
+      ? `${absoluteUrl}${absoluteUrl.includes('?') ? '&' : '?'}t=${Date.now()}`
+      : '';
+    if (!absoluteUrl) {
+      throw new Error('URL do PDF de teste nao retornada pelo backend.');
+    }
+    return { pdfUrl, absoluteUrl: cacheBustedUrl };
+  };
+
   const gerarPdfTeste = async () => {
     if (saving || testingPdf) return;
     if (!fruits.length) {
@@ -1316,12 +1665,7 @@ export default function AnaliseFrutos({ navigation }) {
 
     try {
       setTestingPdf(true);
-      const formData = buildFormData(buildPayload());
-      const response = await api.post('/analise-frutos/teste-pdf', formData, {
-        timeout: 120000,
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      const pdfUrl = response?.pdf_url || response?.data?.pdf_url;
+      const { pdfUrl } = await gerarPdfTesteNoBackend();
       await openTestePdf(pdfUrl);
     } catch (error) {
       console.warn('[AnaliseFrutos] Falha ao gerar PDF de teste:', error?.message);
@@ -1338,6 +1682,32 @@ export default function AnaliseFrutos({ navigation }) {
     if (!fruits.length) { Alert.alert('Sem frutos', 'Informe a quantidade e gere os frutos antes de salvar.'); return; }
     const payload = buildPayload();
     const formData = buildFormData(payload);
+
+    const fotosSalvasResumidas = {};
+    if (payload.fotos_producao_salvas) {
+      Object.entries(payload.fotos_producao_salvas).forEach(([campo, fotos]) => {
+        fotosSalvasResumidas[campo] = Array.isArray(fotos) ? fotos.map(f => f.nome || f.uri?.split('/').pop()) : 0;
+      });
+    }
+    console.log('\n========== [AnaliseFrutos] PAYLOAD ENVIADO ==========');
+    console.log(JSON.stringify({
+      form_id: payload.form_id,
+      fazenda: payload.fazenda_talhao || payload.fazenda,
+      talhao: payload.talhao,
+      variedade: payload.variedade,
+      controle: payload.controle,
+      semana: payload.semana,
+      tipo_analise: payload.tipo_analise,
+      data: payload.data,
+      avaliador: payload.avaliador,
+      qtd_frutos: payload.qtd_frutos,
+      fotos_count: payload.fotos_count,
+      fotos_producao_salvas: fotosSalvasResumidas,
+      frutos: payload.frutos,
+      lotes: payload.lotes,
+    }, null, 2));
+    console.log('======================================================\n');
+
     try {
       setSaving(true);
       const response = await api.post('/analise-frutos', formData, {
@@ -1345,6 +1715,7 @@ export default function AnaliseFrutos({ navigation }) {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const backendMessage = String(response?.data?.message || '').trim();
+      clearPreviewState();
       Alert.alert('Registro salvo', backendMessage || 'Registro enviado com sucesso.', [
         {
           text: 'Nova analise',
@@ -1358,6 +1729,7 @@ export default function AnaliseFrutos({ navigation }) {
       if (isNetworkError) {
         try {
           await saveOfflineAnaliseFrutos(payload);
+          clearPreviewState();
           resetFormState();
           Alert.alert(
             'Salvo offline',
@@ -1422,11 +1794,881 @@ export default function AnaliseFrutos({ navigation }) {
     aplicarDadosTestePorTipo(header.tipo_analise, { avancarParaLotes: true });
   };
 
+  // Constrói o HTML de prévia espelhando a estrutura do PDF gerado no backend
+  const buildPreviewHtml = ({ logoSrc = '', photoCards = [] } = {}) => {
+    const G = '#0B8A43';
+    const GD = '#0A6B36';
+    const OR = '#D9963F';
+
+    const esc = (text) => {
+      if (text == null) return '';
+      const m = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+      return String(text).replace(/[&<>"']/g, (c) => m[c]);
+    };
+
+    const fmt = (value) => {
+      const cleaned = String(value ?? '').trim();
+      return cleaned === '' ? '-' : cleaned;
+    };
+
+    const toNum = (value) => {
+      const parsed = Number(String(value ?? '').replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const formatMetricDecimal = (value) => (
+      Number.isFinite(value) ? value.toFixed(1).replace('.', ',') : '-'
+    );
+
+    const normalizeDiagKey = (label = '') => String(label || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .trim();
+
+    const getStageNumber = (label = '') => {
+      const normalized = normalizeDiagKey(label).replace(',', '.');
+      const match = normalized.match(/EST\s*([0-9]+(?:\.[0-9]+)?)/);
+      if (!match) return null;
+      const value = Number.parseFloat(match[1]);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const getDiagRank = (label = '') => {
+      const key = normalizeDiagKey(label);
+      if (key.includes('BRIX')) return 10;
+      if (key.includes('PENETROM')) return 20;
+      if (key.includes('MATERIA SECA')) return 30;
+      if (key.startsWith('EST') || key.includes(' EST')) return 40;
+      return 90;
+    };
+
+    const sortDiagnosticoRows = (rows = []) => [...rows].sort((a, b) => {
+      const rankA = getDiagRank(a?.label);
+      const rankB = getDiagRank(b?.label);
+      if (rankA !== rankB) return rankA - rankB;
+      if (rankA === 40) {
+        const stageA = getStageNumber(a?.label);
+        const stageB = getStageNumber(b?.label);
+        if (stageA !== null && stageB !== null && stageA !== stageB) return stageB - stageA;
+      }
+      return String(a?.label || '').localeCompare(String(b?.label || ''), 'pt-BR', { sensitivity: 'base', numeric: true });
+    });
+
+    const stats = { pen: { s: 0, c: 0 }, brix: { s: 0, c: 0 }, ms: { s: 0, c: 0 } };
+    const maturacaoCount = {};
+    let maturacaoTotal = 0;
+    const danosMap = {};
+    const ignoredDamageValues = new Set(['', '-', 'NA', 'N/A', 'NAO', 'NÃO', 'SEM DANO', 'SEM DANOS', 'OK']);
+
+    // Busca valor do lote ignorando acentos e símbolos (ex: °Brix == Brix)
+    const getLoteOffline = (valores, ...keys) => {
+      for (const k of keys) {
+        if (valores[k] !== undefined && valores[k] !== '') return valores[k];
+      }
+      // fallback: busca case-insensitive sem acentos
+      const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ°]/g, '').toUpperCase().trim();
+      for (const k of keys) {
+        const kn = norm(k);
+        const found = Object.keys(valores).find((key) => norm(key) === kn);
+        if (found !== undefined && valores[found] !== '') return valores[found];
+      }
+      return '';
+    };
+
+    fruits.forEach((fruit) => {
+      const values = fruit?.valores_lotes || {};
+      const pen = toNum(getLoteOffline(values, 'Penetrometria'));
+      const brix = toNum(getLoteOffline(values, '°Brix', 'Brix', '*Brix'));
+      const materiaSeca = toNum(getLoteOffline(values, 'Matéria Seca', 'Materia Seca'));
+      const maturacao = toNum(getLoteOffline(values, 'Maturação', 'Maturacao'));
+
+      if (pen !== null) { stats.pen.s += pen; stats.pen.c += 1; }
+      if (brix !== null) { stats.brix.s += brix; stats.brix.c += 1; }
+      if (materiaSeca !== null) { stats.ms.s += materiaSeca; stats.ms.c += 1; }
+      if (maturacao !== null) {
+        const stageKey = String(maturacao).replace('.', ',');
+        maturacaoCount[stageKey] = (maturacaoCount[stageKey] || 0) + 1;
+        maturacaoTotal += 1;
+      }
+
+      const rawDamage = String(values.Maturação_danos || '').trim();
+      if (!rawDamage || ignoredDamageValues.has(rawDamage.toUpperCase())) return;
+
+      rawDamage.split(/[;,|/]/).forEach((part) => {
+        const clean = part.trim();
+        if (!clean || ignoredDamageValues.has(clean.toUpperCase())) return;
+        danosMap[clean] = (danosMap[clean] || 0) + 1;
+      });
+    });
+
+    const shelfMetrics = [
+      { label: '°Brix', media: stats.brix.c > 0 ? (stats.brix.s / stats.brix.c) : null },
+      { label: 'Penetrometria', media: stats.pen.c > 0 ? (stats.pen.s / stats.pen.c) : null },
+      { label: 'Matéria Seca', media: stats.ms.c > 0 ? (stats.ms.s / stats.ms.c) : null },
+    ].map((row) => ({ ...row, mediaText: formatMetricDecimal(row.media) }));
+
+    const maturacaoRows = Object.entries(maturacaoCount)
+      .sort((a, b) => Number(a[0].replace(',', '.')) - Number(b[0].replace(',', '.')))
+      .map(([estagio, count]) => {
+        const pct = maturacaoTotal > 0 ? ((count / maturacaoTotal) * 100) : 0;
+        return { label: `Est ${estagio}`, media: pct, mediaText: formatMetricDecimal(pct) };
+      });
+
+    let diagnosticoRows = [];
+    if (isShelfLife) {
+      diagnosticoRows = shelfMetrics.filter((row) => row.media !== null);
+    } else if (isPreColheita) {
+      diagnosticoRows = sortDiagnosticoRows([
+        ...shelfMetrics.filter((row) => row.media !== null),
+        ...maturacaoRows.filter((row) => row.media !== null && row.media !== 0),
+      ]);
+    } else if (isProducao || isAcompanhamento) {
+      diagnosticoRows = sortDiagnosticoRows(shelfMetrics.filter((row) => row.media !== null));
+    } else {
+      diagnosticoRows = shelfMetrics.filter((row) => row.media !== null);
+    }
+
+    if (!diagnosticoRows.length) {
+      diagnosticoRows = [{ label: 'Sem dados', media: null, mediaText: '-' }];
+    }
+
+    const qtdTotal = fruits.length || (Number.parseInt(header.qtd_frutos || '0', 10) || 20);
+    const danosRows = Object.entries(danosMap)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base', numeric: true }));
+    const danosDisplay = danosRows.length ? danosRows : [{ label: 'Sem diagnóstico informado', count: 0, placeholder: true }];
+    const totalComDano = danosRows.reduce((sum, row) => sum + row.count, 0);
+
+    const formatIncidValue = (count) => {
+      const qty = Number(count) || 0;
+      if (qtdTotal <= 0 || qty <= 0) return '-';
+      return ((qty / qtdTotal) * 100).toFixed(1);
+    };
+
+    const totalIncidValue = formatIncidValue(totalComDano);
+    const totalIncidLabel = totalIncidValue === '-' ? '-' : `${totalIncidValue}%`;
+
+    const secHead = (number, title) => `
+      <div class="section-head">
+        <div class="section-number">${number}</div>
+        <div class="section-title">${esc(title)}</div>
+      </div>`;
+
+    const dataRow = (label, value) => `
+      <div class="data-row">
+        <div class="data-label">${esc(label)}</div>
+        <div class="data-value">${esc(fmt(value))}</div>
+      </div>`;
+
+    const chartRows = diagnosticoRows.filter((row) => row.media !== null);
+    const showPercentAxis = !isShelfLife;
+    const maxChartValue = chartRows.length
+      ? Math.max(...chartRows.map((row) => Number(row.media || 0)), 1)
+      : 1;
+    const axisMax = showPercentAxis
+      ? 100
+      : Math.max(5, Math.ceil(maxChartValue / 5) * 5);
+    const axisStep = showPercentAxis
+      ? 20
+      : (axisMax <= 10 ? 2 : axisMax <= 20 ? 5 : axisMax <= 50 ? 10 : 20);
+    const axisTicks = [];
+    for (let tick = 0; tick <= axisMax; tick += axisStep) axisTicks.push(tick);
+    if (axisTicks[axisTicks.length - 1] !== axisMax) axisTicks.push(axisMax);
+
+    const sec2Title = isShelfLife ? 'AVALIAÇÃO - DANOS INTERNOS' : 'AVALIAÇÃO:';
+    const sec2 = `
+      ${secHead('2', sec2Title)}
+      <div class="qtd-info">
+        Quantidade de frutos analisados:
+        <strong>${qtdTotal}</strong>
+      </div>
+      <div class="side-grid">
+        <div class="panel">
+          <div class="panel-title">Diagnóstico</div>
+          <table class="metric-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="metric-right">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${diagnosticoRows.map((row, index) => `
+                <tr>
+                  <td>2.${index + 1} - ${esc(row.label)}</td>
+                  <td class="metric-right metric-value">${row.media === null ? '-' : esc(row.mediaText)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Representação Gráfica</div>
+          <table class="chart-table">
+            <thead>
+              <tr>
+                <th class="chart-item-col">Item</th>
+                <th>Grafico</th>
+                <th class="chart-value-col">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${chartRows.length ? chartRows.map((row) => {
+                const rowValue = Number(row.media || 0);
+                const barWidthPct = Math.max(0, Math.min(100, (rowValue / axisMax) * 100));
+                const valueLabel = showPercentAxis
+                  ? `${formatMetricDecimal(rowValue)}%`
+                  : esc(row.mediaText);
+                return `
+                  <tr>
+                    <td class="chart-item-col">${esc(row.label)}</td>
+                    <td>
+                      <div class="bar-track">
+                        <div class="bar-fill" style="width:${barWidthPct.toFixed(2)}%;"></div>
+                      </div>
+                    </td>
+                    <td class="chart-value-col chart-value">${valueLabel}</td>
+                  </tr>
+                `;
+              }).join('') : `
+                <tr>
+                  <td colspan="3" class="chart-empty">Sem dados para gráfico.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+          ${chartRows.length ? `
+            <div class="axis-scale">
+              ${axisTicks.map((tick) => `<span>${tick}${showPercentAxis ? '%' : ''}</span>`).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </div>`;
+
+    const sec3Title = (isProducao || isAcompanhamento) ? 'DISTÚRBIOS ENCONTRADOS:' : 'AVALIAÇÃO - DANOS INTERNOS';
+    const sec3 = `
+      ${secHead('3', sec3Title)}
+      <table class="damage-table">
+        <thead>
+          <tr>
+            <th class="damage-label">DANO INTERNO</th>
+            <th class="damage-qtd">QTD</th>
+            <th class="damage-incid">INCID.%</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${danosDisplay.map((row, index) => `
+            <tr>
+              <td class="damage-label">3.${index + 1} - ${esc(row.label)}</td>
+              <td class="damage-qtd">${row.placeholder ? '-' : row.count}</td>
+              <td class="damage-incid">${row.placeholder ? '-' : formatIncidValue(row.count)}</td>
+            </tr>
+          `).join('')}
+          <tr class="damage-highlight">
+            <td class="damage-label">3.${danosDisplay.length + 1} - Frutos com Danos Internos</td>
+            <td class="damage-qtd">${totalComDano}</td>
+            <td class="damage-incid">${totalIncidValue}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="damage-total-box">
+        <span>PERCENTUAL TOTAL DE DANOS INTERNOS</span>
+        <strong>${totalIncidLabel}</strong>
+      </div>`;
+
+    const avaliador = esc(String(user?.nome || user?.name || '-').trim() || '-');
+    const dataAnalise = esc(fmt(header.data));
+    const avaliado = esc(fmt(header.fazenda_talhao || 'Controle de qualidade - Packing Manga'));
+    const logoMarkup = String(logoSrc || '').trim()
+      ? `<img class="brand-logo-img" src="${esc(logoSrc)}" alt="Logo" />`
+      : `<div class="brand-word">AGRO<span class="dot">●</span>DAN</div>
+         <div class="brand-sub">Agropecuária Roriz Dantas</div>`;
+    const secFotos = Array.isArray(photoCards) && photoCards.length > 0
+      ? `
+      <div class="photos-block">
+        <div class="photos-title">FOTOS</div>
+        <div class="photos-grid">
+          ${photoCards.map((card) => `
+            <div class="photo-card">
+              <div class="photo-media">
+                <img src="${esc(card.src)}" alt="${esc(card.label)}" />
+              </div>
+              <div class="photo-caption">${esc(card.label)}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`
+      : '';
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prévia - Análise de Frutos</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 12mm 10mm 12mm 10mm;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #111;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .page {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      background: #fff;
+      padding: 6px 2px 10px;
+      box-shadow: none;
+    }
+    .header-top {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .header-main {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      flex: 1;
+    }
+    .brand-line {
+      width: 3px;
+      height: 36px;
+      background: ${G};
+      flex-shrink: 0;
+    }
+    .brand-logo-wrap {
+      min-width: 132px;
+    }
+    .brand-logo-img {
+      width: 138px;
+      height: 34px;
+      object-fit: contain;
+      display: block;
+    }
+    .brand-word {
+      font-size: 21px;
+      font-weight: 700;
+      color: ${G};
+      line-height: 1;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+    }
+    .brand-word .dot {
+      color: #f08b2c;
+      font-size: 24px;
+      vertical-align: middle;
+      margin: 0 1px;
+    }
+    .brand-sub {
+      font-size: 9px;
+      color: #6f806f;
+      margin-top: 2px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    .title-block {
+      margin-left: 4px;
+      min-width: 0;
+      flex: 1;
+    }
+    .title-main {
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1;
+      color: #111;
+    }
+    .title-sub {
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #111;
+      letter-spacing: 0.4px;
+    }
+    .photos-block {
+      margin-top: 12px;
+    }
+    .photos-title {
+      background: ${G};
+      color: #fff;
+      font-size: 20px;
+      font-weight: 700;
+      padding: 8px 16px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+    .photos-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .photo-card {
+      border: 1px solid #c6ccc6;
+      background: #f7f8f7;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .photo-media {
+      height: 270px;
+      background: #eef2ee;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-bottom: 1px solid #cfd6cf;
+    }
+    .photo-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .photo-caption {
+      background: #edf2ee;
+      color: ${GD};
+      font-size: 22px;
+      font-weight: 700;
+      text-align: center;
+      padding: 8px 6px;
+      line-height: 1;
+    }
+    .header-divider {
+      border-top: 1px solid #d8e7dc;
+      margin: 10px 0 8px;
+    }
+    .info-box {
+      border: 1px solid #e9eeea;
+      background: #fbfcfb;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      font-size: 11px;
+    }
+    .info-row {
+      display: flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-top: 1px solid #edf1ee;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .info-row:nth-child(1), .info-row:nth-child(2) { border-top: 0; }
+    .info-label {
+      color: #268d5f;
+      font-weight: 700;
+      margin-right: 8px;
+      min-width: 56px;
+    }
+    .results-title {
+      font-size: 34px;
+      font-weight: 700;
+      text-align: center;
+      margin: 8px 0 4px;
+      color: #111;
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      border-top: 1px solid #e2eae4;
+      margin-top: 12px;
+      padding-top: 7px;
+      margin-bottom: 4px;
+    }
+    .section-number {
+      background: ${G};
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      width: 28px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .section-title {
+      margin-left: 8px;
+      font-size: 30px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+      color: #111;
+      line-height: 1;
+    }
+    .data-row {
+      display: flex;
+      min-height: 24px;
+      align-items: center;
+      border-top: 1px solid #e0e0e0;
+      border-bottom: 1px solid #d8d8d8;
+    }
+    .data-label {
+      width: 62%;
+      flex-shrink: 0;
+      padding: 0 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #111;
+    }
+    .data-value {
+      width: 38%;
+      padding: 0 6px 0 10px;
+      font-size: 11px;
+      color: #111;
+    }
+    .qtd-info {
+      background: #f8f9f7;
+      color: #4b4b4b;
+      font-size: 11px;
+      padding: 6px 8px;
+      margin: 6px 0 10px;
+      border: 1px solid #ececec;
+    }
+    .qtd-info strong { color: ${GD}; margin-left: 4px; }
+    .side-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .panel {
+      border: 1px solid #e0e0e0;
+      background: #fff;
+    }
+    .panel-title {
+      background: #f1f3f0;
+      border-bottom: 1px solid #d9dfd8;
+      color: ${GD};
+      font-size: 22px;
+      font-weight: 700;
+      padding: 8px 10px;
+      line-height: 1;
+    }
+    .metric-table, .chart-table, .damage-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .metric-table th, .chart-table th, .damage-table th {
+      background: #f7f8f6;
+      border: 1px solid #e5e9e4;
+      color: ${GD};
+      font-size: 10px;
+      font-weight: 700;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    .metric-table td, .chart-table td, .damage-table td {
+      border: 1px solid #ededed;
+      padding: 6px 8px;
+      color: #111;
+      background: #fff;
+    }
+    .metric-right {
+      width: 62px;
+      text-align: right !important;
+    }
+    .metric-value {
+      color: ${GD} !important;
+      font-weight: 700;
+    }
+    .chart-item-col { width: 34%; }
+    .chart-value-col {
+      width: 62px;
+      text-align: right !important;
+    }
+    .chart-value {
+      font-weight: 700;
+      color: #111;
+    }
+    .bar-track {
+      width: 100%;
+      height: 12px;
+      background: #c9d0d7;
+    }
+    .bar-fill {
+      height: 12px;
+      background: ${GD};
+    }
+    .chart-empty {
+      text-align: center;
+      color: #777 !important;
+      padding: 10px 8px !important;
+    }
+    .axis-scale {
+      margin: 6px 8px 8px;
+      margin-left: calc(34% + 8px);
+      margin-right: 62px;
+      font-size: 8px;
+      color: #808080;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #bbbbbb;
+      padding-top: 4px;
+    }
+    .damage-table {
+      margin-top: 4px;
+      border-color: #d0d0d0;
+    }
+    .damage-table th {
+      background: #ececea;
+      border-color: #d0d0d0;
+      color: #111;
+      font-size: 11px;
+    }
+    .damage-label { width: 70%; text-align: left; }
+    .damage-qtd { width: 14%; text-align: center !important; }
+    .damage-incid { width: 16%; text-align: center !important; }
+    .damage-table td.damage-qtd,
+    .damage-table td.damage-incid { color: ${GD}; }
+    .damage-highlight td {
+      background: ${G};
+      color: #fff !important;
+      font-weight: 700;
+      border-color: #d0d0d0;
+    }
+    .damage-total-box {
+      border: 1px solid #d8d8d8;
+      background: #f8f9f7;
+      margin-top: 6px;
+      padding: 8px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .damage-total-box strong {
+      color: ${OR};
+      font-size: 13px;
+    }
+    .footer-time {
+      margin-top: 18px;
+      border-top: 1px solid #d0d0d0;
+      padding-top: 6px;
+      font-size: 9px;
+      color: #8c8c8c;
+      text-align: right;
+    }
+    @media screen and (max-width: 680px) {
+      body { padding: 6px; background: #fff; }
+      .page { padding: 10px 8px 14px; }
+      .header-top { gap: 8px; align-items: flex-start; }
+      .header-main { gap: 8px; }
+      .brand-logo-img { width: 104px; height: 26px; }
+      .title-main { font-size: 18px; }
+      .title-sub { font-size: 10px; }
+      .results-title { font-size: 26px; }
+      .section-title { font-size: 21px; }
+      .side-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+      .axis-scale { margin-left: calc(34% + 8px); margin-right: 62px; }
+      .photos-title { font-size: 16px; padding: 7px 10px; }
+      .photos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .photo-media { height: 155px; }
+      .photo-caption { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header-top">
+      <div class="header-main">
+        <div class="brand-line"></div>
+        <div class="brand-logo-wrap">
+          ${logoMarkup}
+        </div>
+        <div class="title-block">
+          <div class="title-main">ANALISE DE FRUTOS</div>
+          <div class="title-sub">CONTROLE DE QUALIDADE</div>
+        </div>
+      </div>
+    </div>
+    <div class="header-divider"></div>
+
+    <div class="info-box">
+      <div class="info-row"><span class="info-label">Avaliador:</span> ${avaliador}</div>
+      <div class="info-row"><span class="info-label">Inicial:</span> ${dataAnalise}</div>
+      <div class="info-row"><span class="info-label">Avaliado:</span> ${avaliado}</div>
+      <div class="info-row"><span class="info-label">Fim:</span> ${dataAnalise}</div>
+    </div>
+
+    <div class="results-title">RESULTADOS</div>
+
+    ${secHead('1', 'DADOS')}
+    ${dataRow('1.1 - Data de Analise', header.data)}
+    ${dataRow('1.2 - Tipo de Analise', header.tipo_analise)}
+    ${dataRow('1.3 - Fazenda/Produtor', header.fazenda_talhao)}
+    ${dataRow('1.4 - Talhao', header.talhao)}
+    ${dataRow('1.5 - Variedade', header.variedade)}
+    ${dataRow('1.6 - Controle', header.controle)}
+    ${dataRow('1.7 - Observacoes', header.observacoes)}
+
+    ${sec2}
+    ${sec3}
+    ${secFotos}
+
+    <div class="footer-time">
+      Gerado em ${new Date().toLocaleString('pt-BR')}
+    </div>
+  </div>
+</body>
+</html>`;
+  };
+
+  const baixarPdfPreviewNoCache = async (absoluteUrl = '') => {
+    if (!absoluteUrl || !FileSystem.cacheDirectory) return '';
+    try {
+      const fileUri = `${FileSystem.cacheDirectory}analise_frutos_preview_${Date.now()}.pdf`;
+      const downloaded = await FileSystem.downloadAsync(absoluteUrl, fileUri);
+      if (downloaded?.status === 200 && downloaded?.uri) return downloaded.uri;
+    } catch {}
+    return '';
+  };
+
+  const gerarPdfPreviewOffline = async () => {
+    const previewAssets = await resolvePreviewAssets();
+    const html = buildPreviewHtml(previewAssets);
+    const result = await Print.printToFileAsync({
+      html,
+      base64: false,
+      width: 595,
+      height: 842,
+      margins: { left: 0, top: 0, right: 0, bottom: 0 },
+    });
+    if (!result?.uri) {
+      throw new Error('Nao foi possivel gerar PDF offline.');
+    }
+    setPdfBase64(null);
+    setPreviewPdfUrl('');
+    setPreviewPdfUri(result.uri);
+  };
+
+  // Gera a prévia usando o PDF real do backend para manter layout 100% igual ao arquivo final.
+  const gerarPdfParaVisualizacao = async () => {
+    if (isGeneratingPdf || saving || testingPdf) return;
+    if (!fruits.length) {
+      clearPreviewState();
+      return;
+    }
+
+    try {
+      setIsGeneratingPdf(true);
+      // Na prévia (passo 4), nao enviar fotos para evitar upload duplicado antes do salvar final.
+      const { absoluteUrl } = await gerarPdfTesteNoBackend({ includePhotos: false });
+      const localUri = await baixarPdfPreviewNoCache(absoluteUrl);
+      setPdfBase64(null);
+      setPreviewPdfUrl(absoluteUrl);
+      setPreviewPdfUri(localUri || absoluteUrl);
+    } catch (error) {
+      console.warn('[AnaliseFrutos] Falha ao gerar prévia em PDF:', error?.message);
+      const isNetworkError = !error?.response;
+      const backendMessage = String(error?.response?.data?.error || '').trim();
+      if (isNetworkError) {
+        try {
+          await gerarPdfPreviewOffline();
+        } catch {
+          const previewAssets = await resolvePreviewAssets().catch(() => ({}));
+          setPreviewPdfUri('');
+          setPreviewPdfUrl('');
+          setPdfBase64(buildPreviewHtml(previewAssets));
+        }
+        return;
+      }
+      setPreviewPdfUri('');
+      setPreviewPdfUrl('');
+      Alert.alert('Erro', backendMessage || 'Nao foi possivel gerar a previa em PDF agora.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  // Renderiza a prévia dos dados no WebView
+  function renderResumo() {
+    const previewSource = previewPdfUri
+      ? { uri: previewPdfUri }
+      : (previewPdfUrl ? { uri: previewPdfUrl } : null);
+    const source = previewSource || (pdfBase64 ? { html: pdfBase64 } : null);
+
+    if (isGeneratingPdf && !source) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={GREEN} />
+          <Text style={{ marginTop: 12, color: '#666', fontSize: 14 }}>Gerando prévia do PDF...</Text>
+        </View>
+      );
+    }
+
+    if (!source) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <MaterialIcons name="picture-as-pdf" size={48} color="#CCC" />
+          <Text style={{ marginTop: 12, color: '#999', fontSize: 14 }}>Prévia não disponível</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={{ flex: 1 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: '#DDE4DD',
+            backgroundColor: '#F4F7F2',
+          }}
+        >
+          <TouchableOpacity onPress={gerarPdfParaVisualizacao} activeOpacity={0.85} disabled={isGeneratingPdf}>
+            <MaterialIcons name={isGeneratingPdf ? 'hourglass-empty' : 'refresh'} size={20} color={GREEN} />
+          </TouchableOpacity>
+        </View>
+        <WebView
+          source={source}
+          style={{ flex: 1 }}
+          originWhitelist={['*']}
+          javaScriptEnabled
+          scrollEnabled
+          pinchGestureEnabled
+          allowFileAccess
+          allowUniversalAccessFromFileURLs
+          mixedContentMode="always"
+          cacheEnabled={false}
+          startInLoadingState
+          renderLoading={() => (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={GREEN} />
+              <Text style={{ marginTop: 10, color: '#777', fontSize: 13 }}>Carregando PDF...</Text>
+            </View>
+          )}
+          scalesPageToFit={false}
+        />
+      </View>
+    );
+  }
+
   // Controla a acao do botao principal em cada passo: avanca o formulario ou salva no ultimo passo.
   const handlePrimaryAction = () => {
-    if (saving || testingPdf) return;
+    if (saving || testingPdf || isGeneratingPdf) return;
     if (step === 0) { commitQtdFrutosChange(); setStep(1); return; }
     if (step === 1) { setStep(2); return; }
+    if (step === 2) { clearPreviewState(); setStep(3); return; }
     handleSave();
   };
 
@@ -1434,6 +2676,7 @@ export default function AnaliseFrutos({ navigation }) {
   const handleStepNavigation = (targetStep) => {
     if (targetStep === step) return;
     if (targetStep < step) {
+      if (targetStep < 3) clearPreviewState();
       setStep(targetStep);
       return;
     }
@@ -1441,6 +2684,7 @@ export default function AnaliseFrutos({ navigation }) {
       const canProceed = commitQtdFrutosChange();
       if (!canProceed) return;
     }
+    if (targetStep === 3) clearPreviewState();
     setStep(targetStep);
   };
 
@@ -1471,29 +2715,27 @@ export default function AnaliseFrutos({ navigation }) {
             <MaterialIcons name="history" size={22} color={GREEN} />
           </TouchableOpacity>
         )}
+        {!!editingFormId && <View style={styles.rightSpace} />}
       </View>
 
       <View style={styles.stepWrap}><StepIndicator currentStep={step} onStepPress={handleStepNavigation} /></View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      {step === 3 ? (
+        renderResumo()
+      ) : (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scroll}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === 'ios' ? 130 : keyboardHeight + 130 }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
       >
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === 'ios' ? 130 : keyboardHeight + 130 }]}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        showsVerticalScrollIndicator={false}
-      >
-        {step === 0 && (
-          <TouchableOpacity onPress={preencherDadosTeste} style={styles.btnTeste}>
-            <Text style={styles.btnTesteText}>Preencher dados de teste (tipo selecionado)</Text>
-          </TouchableOpacity>
-        )}
-
         {step === 0 && (
           <View style={styles.card}>
             <SelectField label="Tipo de Analise" required value={header.tipo_analise} onPress={() => setShowTipoModal(true)} placeholder="Selecione o tipo" />
@@ -1501,34 +2743,35 @@ export default function AnaliseFrutos({ navigation }) {
               label="Fazenda"
               required
               value={header.fazenda_talhao}
-              onPress={() => setShowFarmModal(true)}
+              onPress={() => !editingFormId && setShowFarmModal(true)}
               placeholder="Selecione a fazenda"
+              disabled={!!editingFormId}
             />
             <SelectField
               label="Talhao"
               required
               value={header.talhao}
-              onPress={() => setShowTalhaoModal(true)}
+              onPress={() => !editingFormId && setShowTalhaoModal(true)}
               placeholder={!header.fazenda_talhao ? 'Selecione a fazenda primeiro' : 'Selecione o talhao'}
-              disabled={!header.fazenda_talhao}
+              disabled={!!editingFormId || !header.fazenda_talhao}
             />
-            <FieldInput
+            <SelectField
               label="Data"
               required
-              value={header.data}
-              onChangeText={handleDateChange}
-              placeholder="dd/mm/aaaa"
-              onFocus={handleInputFocus}
+              value={header.data || ''}
+              onPress={() => setShowDateModal(true)}
+              placeholder="Selecione a data"
             />
             <FieldInput label="Semana" value={String(header.semana ?? '')} placeholder="Automatica" editable={false} />
             <FieldInput
               label="Controle"
               required
               value={header.controle}
-              onChangeText={(value) => updateHeader('controle', normalizeIntegerInput(value))}
+              onChangeText={(value) => !editingFormId && updateHeader('controle', normalizeIntegerInput(value))}
               placeholder="Ex: 145"
               keyboardType="number-pad"
               onFocus={handleInputFocus}
+              editable={!editingFormId}
             />
             <SelectField label="Variedade" required value={header.variedade} onPress={() => setShowVarModal(true)} placeholder="Selecione a variedade" />
             <FieldInput
@@ -1541,21 +2784,12 @@ export default function AnaliseFrutos({ navigation }) {
               keyboardType="number-pad"
               onFocus={handleInputFocus}
             />
-            <SelectField label="Criterio" value={header.criterio} onPress={() => setShowCriterioModal(true)} placeholder="Selecione..." />
             <FieldInput
               label="Observacoes"
               value={header.observacoes}
               onChangeText={(value) => updateHeader('observacoes', value)}
               placeholder="Observacoes gerais"
               multiline
-              onFocus={() => setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 120)}
-            />
-            <FieldInput
-              label="Peso final da caixa"
-              value={header.peso_final_caixa}
-              onChangeText={(value) => updateHeader('peso_final_caixa', normalizeDecimalInput(value))}
-              placeholder="Ex: 22.50"
-              keyboardType="decimal-pad"
               onFocus={() => setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 120)}
             />
           </View>
@@ -1641,7 +2875,7 @@ export default function AnaliseFrutos({ navigation }) {
             {(existingFotosSalvas.length > 0 || fotos.length > 0) && (
               <View style={styles.photoGrid}>
                 {existingFotosSalvas.map((item, index) => {
-                  const uri = buildAbsoluteApiUrl(item.url || item.caminho_relativo || '');
+                  const uri = item.local_uri || buildAbsoluteApiUrl(item.url || item.caminho_relativo || '');
                   if (!uri) return null;
                   return (
                     <View key={`saved-${index}`} style={styles.thumb}>
@@ -1759,15 +2993,16 @@ export default function AnaliseFrutos({ navigation }) {
         )}
       </ScrollView>
       </KeyboardAvoidingView>
+      )}
 
       <TouchableOpacity
-        style={[styles.fabIconOnly, { bottom: floatingButtonsBottom }, (saving || testingPdf) && { opacity: 0.65 }]}
+        style={[styles.fabIconOnly, { bottom: floatingButtonsBottom }, (saving || testingPdf || isGeneratingPdf) && { opacity: 0.65 }]}
         onPress={handlePrimaryAction}
         activeOpacity={0.85}
-        disabled={saving || testingPdf}
+        disabled={saving || testingPdf || isGeneratingPdf}
       >
         <MaterialIcons
-          name={saving || testingPdf ? 'hourglass-empty' : step === STEPS_TOTAL - 1 ? 'save' : 'arrow-forward'}
+          name={saving || testingPdf || isGeneratingPdf ? 'hourglass-empty' : step === STEPS_TOTAL - 1 ? 'save' : 'arrow-forward'}
           size={30}
           color="#FFFFFF"
         />
@@ -1930,7 +3165,17 @@ export default function AnaliseFrutos({ navigation }) {
         title="Selecionar Talhao"
         options={talhoesDaFazenda}
         emptyText="Nenhum talhao encontrado para esta fazenda."
-        onSelect={(talhao) => updateHeader('talhao', talhao)}
+        onSelect={(talhao) => {
+          // Ex: "9_PETROLINA - Palmer" → talhao="9_PETROLINA", variedade="Palmer"
+          const sepIdx = String(talhao || '').lastIndexOf(' - ');
+          if (sepIdx !== -1) {
+            const talhaoLimpo = talhao.substring(0, sepIdx).trim();
+            const variedadeAuto = talhao.substring(sepIdx + 3).trim();
+            setHeader((prev) => ({ ...prev, talhao: talhaoLimpo, variedade: variedadeAuto || prev.variedade }));
+          } else {
+            updateHeader('talhao', talhao);
+          }
+        }}
         onClose={() => setShowTalhaoModal(false)}
         searchPlaceholder="Buscar talhao..."
         allowCreate={!!header.fazenda_talhao}
@@ -1949,16 +3194,6 @@ export default function AnaliseFrutos({ navigation }) {
       />
 
       <SearchListModal
-        visible={showCriterioModal}
-        title="Criterio"
-        options={criterioModalOptions}
-        emptyText="Nenhum criterio encontrado."
-        onSelect={(v) => updateHeader('criterio', v === 'Selecione...' ? '' : v)}
-        onClose={() => setShowCriterioModal(false)}
-        searchPlaceholder="Buscar criterio..."
-      />
-
-      <SearchListModal
         visible={showTipoModal}
         title="Tipo de Analise"
         options={tiposAnaliseOptions}
@@ -1966,6 +3201,13 @@ export default function AnaliseFrutos({ navigation }) {
         onSelect={(v) => updateHeader('tipo_analise', v)}
         onClose={() => setShowTipoModal(false)}
         searchPlaceholder="Buscar tipo..."
+      />
+
+      <DateModalAF
+        visible={showDateModal}
+        current={(() => { try { const [d,m,y] = (header.data || '').split('/'); const dt = new Date(y, m - 1, d); return isNaN(dt.getTime()) ? new Date() : dt; } catch { return new Date(); } })()}
+        onConfirm={(date) => handleDateChange(formatDate(date))}
+        onClose={() => setShowDateModal(false)}
       />
 
       <SearchListModal
@@ -1988,8 +3230,6 @@ export default function AnaliseFrutos({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  btnTeste: { marginHorizontal: 16, marginTop: 10, marginBottom: 4, backgroundColor: '#FFF3CD', borderWidth: 1, borderColor: '#FFC107', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
-  btnTesteText: { color: '#856404', fontWeight: 'bold', fontSize: 13 },
   safe: { flex: 1, backgroundColor: '#F4F7F2' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E8ECE7' },
   backBtn: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EDF4EE' },

@@ -1,13 +1,14 @@
+
 {
   "expo": {
     "name": "Controle de Qualidade",
     "slug": "agrosolo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/LOGO_CQ.png",
+    "icon": "./assets/logocq.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/LOGO_CQ.png",
+      "image": "./assets/logocq.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -20,7 +21,7 @@
     "android": {
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/LOGO_CQ.png",
+        "foregroundImage": "./assets/logocq.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
@@ -33,7 +34,7 @@
       ],
       "usesCleartextTraffic": true,
       "networkSecurityConfig": "./network_security_config.xml",
-      "package": "com.cqagrodan.agrosoloapp"
+      "package": "com.cqagrodan1.agrosoloapp"
     },
     "web": {
       "favicon": "./assets/agrosolologo.png"
@@ -54,13 +55,13 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/3648a12d-6e9e-46d7-b095-f11e7823ba2c",
+      "url": "https://u.expo.dev/074209e4-e75e-4d97-b938-c68f3f173afc",
       "checkOnLaunch": "ALWAYS",
       "fallbackToCacheTimeout": 30000
     },
     "extra": {
       "eas": {
-        "projectId": "3648a12d-6e9e-46d7-b095-f11e7823ba2c"
+        "projectId": "074209e4-e75e-4d97-b938-c68f3f173afc"
       }
     }
   }

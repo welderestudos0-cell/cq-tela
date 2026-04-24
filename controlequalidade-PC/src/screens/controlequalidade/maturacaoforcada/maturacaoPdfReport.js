@@ -919,7 +919,9 @@ const drawDamageDistributionChart = (ops, { topY, data, total }) => {
     { label: 'Podridão Ped. Severo', count: Array.isArray(data.peduncular) ? toPdfInt(data.peduncular[2]) : 0 },
   ];
 
-  const diagnosticosAtivos = categoriasBase.filter((item) => item.count > 0);
+  const diagnosticosAtivos = categoriasBase
+    .filter((item) => item.count > 0)
+    .sort((a, b) => (a.count - b.count) || a.label.localeCompare(b.label));
   let chartData = (diagnosticosAtivos.length ? diagnosticosAtivos : categoriasBase.filter((item) => item.label === 'Tecido Esponjoso'))
     .map((item) => ({
       ...item,
@@ -1242,7 +1244,12 @@ const getEvaluationDataset = (data) => {
     ['Alternária', data.alternaria || '0'],
   ];
 
-  const activeEvalItems = evalItems.filter(([, count]) => toPdfInt(count) > 0);
+  const activeEvalItems = evalItems
+    .filter(([, count]) => toPdfInt(count) > 0)
+    .sort((a, b) => {
+      const diff = toPdfInt(a[1]) - toPdfInt(b[1]);
+      return diff !== 0 ? diff : String(a[0]).localeCompare(String(b[0]));
+    });
   const rowsToRender = activeEvalItems.length
     ? activeEvalItems
     : [['Sem diagnóstico informado', '0']];

@@ -77,9 +77,6 @@ const LoadingScreen = () => {
   console.log('🖼️ Imagem de fundo:', currentConfig.backgroundImage ? 'Disponível' : 'Não');
 
   const getPaddingTop = () => {
-    if (destination === 'Home') {
-      return 50;
-    }
     return height * 0.4; // Centraliza no meio da tela
   };
 

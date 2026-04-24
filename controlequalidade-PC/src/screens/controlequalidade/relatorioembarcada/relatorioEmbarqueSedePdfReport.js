@@ -840,8 +840,7 @@ const drawItemFieldCard = (
   const innerH = Math.max(8, (boxHeight - labelGap) - (innerPad * 2));
 
   if (!photoIndexes.length) {
-    drawNoPhotoPlaceholder(ops, { x: innerX, topY: innerY, w: innerW, h: innerH, text: 'No photo added' });
-    return;
+    return false;
   }
 
   if (photoIndexes.length === 1) {
@@ -862,7 +861,7 @@ const drawItemFieldCard = (
     } else {
       drawNoPhotoPlaceholder(ops, { x: innerX, topY: innerY, w: innerW, h: innerH, text: 'Photo unavailable' });
     }
-    return;
+    return true;
   }
 
   const visibleIndexes = photoIndexes.slice(0, 4);
@@ -931,6 +930,8 @@ const drawItemFieldCard = (
       width: badgeW,
     });
   }
+
+  return true;
 };
 
 // Desenha page footer.
@@ -963,15 +964,23 @@ const normalizeRelatorioSections = (sections = []) => {
     ? sections
     : createInitialRelatorioEmbarqueState();
 
-  return sourceSections.map((section) => ({
-    key: section.key,
-    title: section.title,
-    items: (section.items || []).map((item) => ({
-      key: item.key,
-      label: item.label,
-      photos: normalizePhotos(item.photos || []),
-    })),
-  }));
+  return sourceSections
+    .map((section) => ({
+      key: section.key,
+      title: section.title,
+      items: (section.items || [])
+        .map((item) => {
+          const photos = normalizePhotos(item.photos || []);
+          if (!photos.length) return null;
+          return {
+            key: item.key,
+            label: item.label,
+            photos,
+          };
+        })
+        .filter(Boolean),
+    }))
+    .filter((section) => section.items.length > 0);
 };
 
 // Monta os modelos de paginas do relatorio de embarque para o PDF.
@@ -982,27 +991,30 @@ const buildRelatorioEmbarquePages = (sections = [], generalInfo = {}) => {
   const sectionPages = [];
 
   normalizedSections.forEach((section) => {
-    const itemsWithPhotoIndexes = (section.items || []).map((item) => {
-      const photoIndexes = [];
+    const itemsWithPhotoIndexes = (section.items || [])
+      .map((item) => {
+        const photoIndexes = [];
 
-      (item.photos || []).forEach((photo) => {
-        const photoIndex = flatPhotos.length;
-        flatPhotos.push({
-          ...photo,
-          sectionKey: section.key,
-          sectionTitle: section.title,
-          itemKey: item.key,
-          itemLabel: item.label,
+        (item.photos || []).forEach((photo) => {
+          const photoIndex = flatPhotos.length;
+          flatPhotos.push({
+            ...photo,
+            sectionKey: section.key,
+            sectionTitle: section.title,
+            itemKey: item.key,
+            itemLabel: item.label,
+          });
+          photoIndexes.push(photoIndex);
         });
-        photoIndexes.push(photoIndex);
-      });
 
-      return {
-        key: item.key,
-        label: item.label,
-        photoIndexes,
-      };
-    });
+        if (!photoIndexes.length) return null;
+        return {
+          key: item.key,
+          label: item.label,
+          photoIndexes,
+        };
+      })
+      .filter(Boolean);
 
     const sectionChunks = chunkArray(itemsWithPhotoIndexes, 6);
     sectionChunks.forEach((itemsChunk, chunkIndex) => {
@@ -1015,19 +1027,7 @@ const buildRelatorioEmbarquePages = (sections = [], generalInfo = {}) => {
       });
     });
   });
-  const safeSectionPages = sectionPages.length
-    ? sectionPages
-    : [
-      {
-        type: 'sectionItems',
-        sectionTitle: 'MANGO PALMER',
-        items: [],
-        pageIndex: 1,
-        pageTotal: 1,
-      },
-    ];
-
-  const pageModels = safeSectionPages.map((pageModel, index) => ({
+  const pageModels = sectionPages.map((pageModel, index) => ({
     ...pageModel,
     showGeneralInfo: index === 0,
     generalInfo: normalizedGeneralInfo,
@@ -1227,14 +1227,15 @@ const renderSectionGridPage = (
   const gridHeight = Math.max(120, gridBottom - gridTop);
   const cardGapX = 14;
   const cardGapY = 14;
+  const items = (pageModel.items || []).filter((item) => Array.isArray(item?.photoIndexes) && item.photoIndexes.length > 0);
   const cols = 2;
-  const rows = Math.max(1, Math.ceil((pageModel.items || []).length / cols));
+  const rows = Math.max(1, Math.ceil(items.length / cols));
   const cardW = (CONTENT_WIDTH - cardGapX) / cols;
   const maxCardH = 206;
   const cardH = Math.min(maxCardH, (gridHeight - (cardGapY * (rows - 1))) / rows);
   const gridOffsetY = 0;
 
-  (pageModel.items || []).forEach((item, index) => {
+  items.forEach((item, index) => {
     const col = index % cols;
     const row = Math.floor(index / cols);
     const x = PAGE_MARGIN + (col * (cardW + cardGapX));
