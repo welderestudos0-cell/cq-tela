@@ -380,6 +380,13 @@ const Salvar = async (req, res) => {
     ensureDir(path.dirname(jsonPath));
     fs.writeFileSync(jsonPath, payloadJson, "utf8");
 
+    // Gera o PDF imediatamente apos salvar para garantir arquivo na pasta do modulo.
+    try {
+      await gerarRelatorioMFPDFDetalhado(formId);
+    } catch (pdfError) {
+      console.warn(`[MF] Falha ao gerar PDF apos salvar (${formId}): ${pdfError.message}`);
+    }
+
     // Copia fotos para pasta galeria/fazenda/variedade/semana/dia
     try {
       const fazenda = payload.produtor || payload.comprador || "sem_fazenda";

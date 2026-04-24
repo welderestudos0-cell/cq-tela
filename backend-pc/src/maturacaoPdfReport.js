@@ -5,7 +5,7 @@ import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 
 const __dirnameEsm = path.dirname(fileURLToPath(import.meta.url));
-const LOGO_PATH = path.join(__dirnameEsm, '..', '..', 'CONTROLEQUALIDADE', 'src', 'assets', 'logoagrodann.png');
+const LOGO_PATH = path.join(__dirnameEsm, '..', '..', 'controlequalidade-PC', 'src', 'assets', 'logoagrodann.png');
 
 let PNG = null;
 try {
@@ -898,7 +898,7 @@ const drawTopHeaderGrid = (ops, { topY, data }) => {
     topY: topY + topInset,
     w: boxW,
     leftLabel: 'Avaliador',
-    leftValue: data.responsavel || 'Priscilla Araújo Dantas',
+    leftValue: data.responsavel || data.usuario || 'Não informado',
     rightLabel: 'Inicial',
     rightValue: data.dataRec || data.dataAna || '-',
   });
@@ -908,7 +908,7 @@ const drawTopHeaderGrid = (ops, { topY, data }) => {
     topY: topY + topInset + 22,
     w: boxW,
     leftLabel: 'Avaliado',
-    leftValue: 'Controle de qualidade - Packing Manga',
+    leftValue: data.avaliado || data.fazenda || data.fornecedor || 'Não informado',
     rightLabel: 'Fim',
     rightValue: data.dataAna || '-',
   });
@@ -1053,41 +1053,35 @@ const drawDamageDistributionChart = (ops, { topY, data, total }) => {
     { label: 'Podridão Ped. Severo', count: Array.isArray(data.peduncular) ? toPdfInt(data.peduncular[2]) : 0 },
   ];
 
-  const diagnosticosAtivos = categoriasBase.filter((item) => item.count > 0);
+  const diagnosticosAtivos = categoriasBase
+    .filter((item) => item.count > 0)
+    .sort((a, b) => (a.count - b.count) || a.label.localeCompare(b.label));
   let chartData = (diagnosticosAtivos.length ? diagnosticosAtivos : categoriasBase.filter((item) => item.label === 'Tecido Esponjoso'))
     .map((item) => ({
       ...item,
       pct: (item.count / safeTotal) * 100,
     }));
 
-  const leftRowH = 20;
   const chartRowH = 21;
   const rowsCount = Math.max(chartData.length, 1);
-  const leftTableH = 24 + (rowsCount * leftRowH);
   const rightChartH = rowsCount * chartRowH;
-  const contentH = Math.max(leftTableH, rightChartH + 30);
-  const panelH = contentH + 42;
+  const contentH = rightChartH + 28;
+  const panelH = contentH + 28;
   const panelX = PAGE_MARGIN;
   const panelW = CONTENT_WIDTH;
 
-  const innerX = panelX + 4;
-  const innerW = panelW - 8;
-  const colGap = 6;
-  const leftColW = Math.round(innerW * 0.48);
-  const rightColW = innerW - leftColW - colGap;
-  const leftX = innerX;
-  const rightX = leftX + leftColW + colGap;
+  const innerX = panelX + 10;
+  const innerW = panelW - 20;
+  const rightX = innerX;
+  const rightColW = innerW;
   const contentTop = topY + 10;
 
-  const labelColW = Math.round(leftColW * 0.68);
-  const qtyColW = Math.round(leftColW * 0.12);
-  const pctColW = leftColW - labelColW - qtyColW;
-  const qtyColX = leftX + labelColW;
-  const pctColX = qtyColX + qtyColW;
+  const labelColW = Math.round(rightColW * 0.34);
+  const pctColW = 34;
+  const chartW = Math.max(80, rightColW - labelColW - pctColW - 16);
+  const chartX = rightX + labelColW + 8;
 
-  const chartTop = contentTop + 18;
-  const chartW = Math.max(80, rightColW - 38);
-  const chartX = rightX + 4;
+  const chartTop = contentTop + 8;
 
   if (!chartData.length) {
     chartData = [{ label: 'Sem diagnóstico com quantidade', count: 0, pct: 0 }];
@@ -1108,140 +1102,22 @@ const drawDamageDistributionChart = (ops, { topY, data, total }) => {
     lineWidth: 0.9,
   });
   drawPdfRect(ops, {
-    x: leftX,
-    topY: contentTop,
-    w: leftColW,
-    h: leftTableH,
-    fill: [1, 1, 1],
-    stroke: PDF_BORDER,
-    lineWidth: 0.7,
-  });
-  drawPdfRect(ops, {
-    x: leftX,
-    topY: contentTop,
-    w: leftColW,
-    h: 24,
-    fill: PDF_GREEN_LIGHT,
-    stroke: null,
-  });
-  drawPdfText(ops, {
-    x: leftX + 6,
-    topY: contentTop + 6,
-    text: 'DIAGNÓSTICO',
-    size: 8.4,
-    font: 'F2',
-    color: PDF_GREEN_DARK,
-    width: leftColW - 54,
-    latin1: true,
-  });
-  drawPdfText(ops, {
-    x: qtyColX,
-    topY: contentTop + 6,
-    text: 'QTD',
-    size: 8,
-    font: 'F2',
-    color: PDF_GREEN_DARK,
-    width: qtyColW,
-    align: 'center',
-  });
-  drawPdfText(ops, {
-    x: pctColX,
-    topY: contentTop + 6,
-    text: '%',
-    size: 8,
-    font: 'F2',
-    color: PDF_GREEN_DARK,
-    width: pctColW,
-    align: 'center',
-  });
-
-  drawPdfLine(ops, {
-    x1: qtyColX,
-    y1: contentTop,
-    x2: qtyColX,
-    y2: contentTop + leftTableH,
-    color: PDF_BORDER,
-    lineWidth: 0.45,
-  });
-  drawPdfLine(ops, {
-    x1: pctColX,
-    y1: contentTop,
-    x2: pctColX,
-    y2: contentTop + leftTableH,
-    color: PDF_BORDER,
-    lineWidth: 0.45,
-  });
-
-  chartData.forEach((item, index) => {
-    const rowTop = contentTop + 24 + (index * leftRowH);
-    if (index % 2 === 0) {
-      drawPdfRect(ops, {
-        x: leftX,
-        topY: rowTop,
-        w: leftColW,
-        h: leftRowH,
-        fill: [0.985, 0.99, 0.985],
-      });
-    }
-
-    drawPdfLine(ops, {
-      x1: leftX,
-      y1: rowTop + leftRowH,
-      x2: leftX + leftColW,
-      y2: rowTop + leftRowH,
-      color: PDF_BORDER,
-      lineWidth: 0.45,
-    });
-
-    drawPdfText(ops, {
-      x: leftX + 6,
-      topY: rowTop + 4.8,
-      text: item.label,
-      size: 8,
-      font: 'F1',
-      color: PDF_TEXT,
-      width: labelColW - 10,
-      latin1: true,
-    });
-    drawPdfText(ops, {
-      x: qtyColX,
-      topY: rowTop + 4.8,
-      text: String(item.count),
-      size: 8,
-      font: 'F2',
-      color: PDF_TEXT,
-      width: qtyColW,
-      align: 'center',
-    });
-    drawPdfText(ops, {
-      x: pctColX,
-      topY: rowTop + 4.8,
-      text: `${item.pct.toFixed(1).replace('.', ',')}%`,
-      size: 8,
-      font: 'F2',
-      color: [0.07, 0.50, 0.24],
-      width: pctColW,
-      align: 'center',
-    });
-  });
-
-  drawPdfRect(ops, {
     x: rightX,
     topY: contentTop,
     w: rightColW,
     h: contentH,
-    fill: [1, 1, 1],
+    fill: [0.996, 0.998, 0.996],
     stroke: PDF_BORDER,
     lineWidth: 0.7,
   });
-  drawPdfText(ops, {
-    x: rightX + 8,
-    topY: contentTop + 6,
-    text: 'GRÁFICO',
-    size: 8.4,
-    font: 'F2',
-    color: PDF_GREEN_DARK,
-    latin1: true,
+
+  drawPdfLine(ops, {
+    x1: rightX + labelColW,
+    y1: chartTop - 3,
+    x2: rightX + labelColW,
+    y2: chartTop + rightChartH + 2,
+    color: [0.90, 0.92, 0.90],
+    lineWidth: 0.45,
   });
 
     for (let i = 0; i <= ticks; i += 1) {
@@ -1274,6 +1150,17 @@ const drawDamageDistributionChart = (ops, { topY, data, total }) => {
       lightGreen[2] + ((darkGreen[2] - lightGreen[2]) * shadeRatio),
     ];
 
+    if (index % 2 === 0) {
+      drawPdfRect(ops, {
+        x: rightX + 2,
+        topY: y + 1,
+        w: rightColW - 4,
+        h: chartRowH - 1,
+        fill: [0.985, 0.992, 0.985],
+        stroke: null,
+      });
+    }
+
     drawPdfRect(ops, {
       x: chartX,
       topY: y + 4,
@@ -1293,14 +1180,25 @@ const drawDamageDistributionChart = (ops, { topY, data, total }) => {
     });
 
     drawPdfText(ops, {
-      x: rightX + rightColW - 36,
+      x: rightX + rightColW - pctColW,
       topY: y + 5,
       text: `${item.pct.toFixed(1).replace('.', ',')}%`,
       size: 8.2,
       font: 'F2',
       color: PDF_TEXT_LIGHT,
-      width: 30,
+      width: pctColW,
       align: 'right',
+    });
+
+    drawPdfText(ops, {
+      x: rightX + 4,
+      topY: y + 5,
+      text: item.label,
+      size: 8,
+      font: 'F1',
+      color: PDF_TEXT,
+      width: labelColW - 8,
+      latin1: true,
     });
   });
 
@@ -1510,7 +1408,13 @@ const getEvaluationDataset = (data) => {
     ['Alternária', data.alternaria || '0'],
   ];
 
-  const activeEvalItems = evalItems.filter(([, count]) => toPdfInt(count) > 0);
+  const activeEvalItems = evalItems
+    .filter(([, count]) => toPdfInt(count) > 0)
+    .sort((a, b) => {
+      const diff = toPdfInt(a[1]) - toPdfInt(b[1]);
+      if (diff !== 0) return diff;
+      return String(a[0]).localeCompare(String(b[0]));
+    });
   const rowsToRender = activeEvalItems.length
     ? activeEvalItems
     : [['Sem diagnóstico informado', '0']];

@@ -6,10 +6,39 @@ import repositoryCQ from "../repositories/repository.cq.js";
 import repositoryMF from "../repositories/repository.maturacao.forcada.js";
 import { query } from "../database/sqlite.js";
 import buildMaturacaoPdfReport from "../maturacaoPdfReport.js";
+import { FOTOS_ROOT, BACKEND_ROOT as STORAGE_BACKEND_ROOT } from "../config/storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_ROOT = path.join(__dirname, "../../");
 const PASTA_PDFS = path.join(__dirname, "../../uploads/relatorios");
+
+const MF_LOCAL_ROOT = path.join(STORAGE_BACKEND_ROOT, "maturacaoforcada");
+const MF_EXTERNO_ROOT = path.join(FOTOS_ROOT, "maturacaoforcada");
+
+const mfSanitizeFolder = (value) =>
+  String(value || "sem_nome").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_\- ]/g, "_").replace(/\s+/g, "_").replace(/_+/g, "_").trim().slice(0, 60) || "sem_nome";
+
+const mfGetWeekNumber = (date) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return String(Math.ceil((((d - yearStart) / 86400000) + 1) / 7)).padStart(2, "0");
+};
+
+const mfGetModulePaths = (fazenda, variedade, dataAnalise) => {
+  const dt = dataAnalise ? new Date(String(dataAnalise).split("/").reverse().join("-")) : new Date();
+  const date = isNaN(dt.getTime()) ? new Date() : dt;
+  const semana = `S${mfGetWeekNumber(date)}`;
+  const dia = String(date.getDate()).padStart(2, "0");
+  const faz = mfSanitizeFolder(fazenda);
+  const vari = mfSanitizeFolder(variedade);
+  return {
+    local: path.join(MF_LOCAL_ROOT, faz, vari, semana, dia),
+    externo: path.join(MF_EXTERNO_ROOT, faz, vari, semana, dia),
+  };
+};
 
 fs.mkdirSync(PASTA_PDFS, { recursive: true });
 
@@ -274,6 +303,20 @@ const montarDadosMaturacaoDetalhada = (registro) => {
     ? registro.payload_json
     : {};
 
+  const avaliador =
+    registro.usuario
+    || payload.usuario
+    || payload.avaliador
+    || registro.responsavel
+    || payload.responsavel
+    || "";
+  const avaliado =
+    registro.produtor
+    || payload.produtor
+    || payload.fazenda
+    || payload.fornecedor
+    || "";
+
   const fotosSalvas = Array.isArray(payload.fotos_salvas) ? payload.fotos_salvas : [];
   const fotos = fotosSalvas
     .map((foto) => {
@@ -297,6 +340,9 @@ const montarDadosMaturacaoDetalhada = (registro) => {
     dataAna: registro.data_analise || payload.data_analise || registro.data_recebimento || payload.data_recebimento || registro.created_at || new Date().toISOString(),
     fornecedor: registro.produtor || payload.produtor || payload.fornecedor || payload.fazenda || "",
     fazenda: registro.produtor || payload.produtor || payload.fazenda || "",
+    responsavel: avaliador,
+    usuario: avaliador,
+    avaliado,
     comprador: registro.comprador || payload.comprador || "",
     parcela: registro.parcela || payload.parcela || "",
     variedade: registro.variedade || payload.variedade || "",
@@ -349,6 +395,20 @@ export async function gerarRelatorioMFPDFDetalhado(idOuFormId) {
   const pdfConteudo = await buildMaturacaoPdfReport(montarDadosMaturacaoDetalhada(registro));
 
   fs.writeFileSync(caminhoArquivo, pdfConteudo, "binary");
+
+  // Salva cópia do PDF na pasta do módulo (local e rede externa), junto com as fotos.
+  const fazendaBruta = registro.produtor || registro.comprador || "sem_fazenda";
+  const variedadeBruta = registro.variedade || "sem_variedade";
+  const { local: localDir, externo: externoDir } = mfGetModulePaths(fazendaBruta, variedadeBruta, registro.data_analise);
+  for (const dir of [localDir, externoDir]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.copyFileSync(caminhoArquivo, path.join(dir, nomeArquivo));
+    } catch (copyErr) {
+      console.warn(`[MF PDF] Falha ao copiar PDF para ${dir}: ${copyErr.message}`);
+    }
+  }
+
   return caminhoArquivo;
 }
 
@@ -497,6 +557,169 @@ const drawHeaderArrowRow = (doc, {
   return rowHeight;
 };
 
+const ANALISE_FRUTOS_QC_CHECKLIST_TEMPLATE = [
+  { key: "interior_limpo", label: "1. Interior do container esta limpo (livre de odor, sem materiais estranhos, madeira, insetos, etc);" },
+  { key: "sem_estragos_borrachas", label: "2. Container esta sem estragos (borrachas da porta estao em bom estado);" },
+  { key: "drenagem_aberta", label: "3. Drenagem do container esta aberta;" },
+  { key: "refrigeracao_operando", label: "4. Maquinario de refrigeracao esta operando corretamente;" },
+  { key: "pre_resfriado", label: "5. Container esta pre-resfriado na temperatura correta;" },
+  { key: "ventilacao_exposta", label: "6. Ventilacao do container exposta;", usaSimNao: true },
+  { key: "ventilacao_40cbm", label: "7. Ventilacao a 40 CBM;" },
+  { key: "identificacao_correta", label: "8. A identificacao/documentacao do container esta correta;" },
+  { key: "sensores_funcionando", label: "9. Foi verificado se os sensores de temperatura estao funcionando corretamente;" },
+  { key: "registradores_posicao", label: "10. Registradores portateis de temperatura foram colocados na posicao correta na carga;" },
+  { key: "absorvedor_etileno", label: "11. Foi feito uso de absorvedor de etileno;", usaSimNao: true },
+  { key: "saida_ventilacao_verificada", label: "12. A saida de ventilacao dos containers foi aberta e verificada (fazer registro fotografico);" },
+  { key: "sanitizado_acido", label: "13. O container foi sanitizado com solucao a base de acido peracetico;" },
+  { key: "qualidade_paletizacao", label: "14. Qualidade da paletizacao (fitas, estrado e alinhamento das caixas). Nao conformes;" },
+  { key: "carga_temperatura_correta", label: "15. A carga esta na temperatura correta (temperatura media de polpa);" },
+  { key: "lacre_colocado", label: "16. Lacre esta devidamente colocado na porta do container;" },
+  { key: "temperatura_saida", label: "17. Temperatura de saida do container;" },
+];
+
+const ANALISE_FRUTOS_QC_FOTO_CAPTIONS = [
+  "Caixa da variedade",
+  "Pallet da variedade",
+  "Peso da amostra",
+  "Avaliacao interna da polpa",
+  "Fruta inteira",
+  "Fruta inteira",
+  "Leitura de firmeza",
+  "Coloracao da polpa",
+];
+
+const parseMaybeJsonObject = (value, fallback = null) => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const resolveAnaliseFrutosFotoPath = (foto) => {
+  if (!foto) return null;
+
+  const tryPath = (candidate) => {
+    if (!candidate) return null;
+    const cleaned = decodeURIComponent(String(candidate).replace(/^file:\/\//, "").trim());
+    if (!cleaned) return null;
+
+    if (path.isAbsolute(cleaned) && fs.existsSync(cleaned)) return cleaned;
+
+    const absFromRoot = path.resolve(BACKEND_ROOT, cleaned);
+    if (fs.existsSync(absFromRoot)) return absFromRoot;
+
+    const absFromAnaliseDir = path.resolve(BACKEND_ROOT, "analise_frutos", cleaned);
+    if (fs.existsSync(absFromAnaliseDir)) return absFromAnaliseDir;
+
+    return null;
+  };
+
+  if (typeof foto === "string") {
+    return tryPath(foto);
+  }
+
+  const byDisk = tryPath(foto.disk_path || foto.local_uri || foto.path || foto.uri || "");
+  if (byDisk) return byDisk;
+
+  const byRel = tryPath(foto.caminho_relativo || foto.relative_path || "");
+  if (byRel) return byRel;
+
+  const rawUrl = String(foto.url || "").trim();
+  if (rawUrl) {
+    const marker = "/api/analise-frutos/fotos/";
+    const markerIndex = rawUrl.indexOf(marker);
+    if (markerIndex >= 0) {
+      const relFromUrl = rawUrl.slice(markerIndex + marker.length);
+      const byUrl = tryPath(relFromUrl);
+      if (byUrl) return byUrl;
+    }
+  }
+
+  return null;
+};
+
+const collectAnaliseFrutosFotosForQc = (payload = {}) => {
+  const ordered = [];
+  const seen = new Set();
+  const pushFoto = (foto) => {
+    const resolved = resolveAnaliseFrutosFotoPath(foto);
+    if (!resolved || seen.has(resolved)) return;
+    seen.add(resolved);
+    ordered.push(resolved);
+  };
+
+  const fotosSalvas = Array.isArray(payload.fotos_salvas) ? payload.fotos_salvas : [];
+  fotosSalvas.forEach(pushFoto);
+
+  const fotosProd = parseMaybeJsonObject(payload.fotos_producao, payload.fotos_producao) || {};
+  ["firmeza", "maturacao", "danos_internos"].forEach((campo) => {
+    const lista = Array.isArray(fotosProd?.[campo]) ? fotosProd[campo] : [];
+    lista.forEach(pushFoto);
+  });
+
+  return ordered;
+};
+
+const buildAnaliseFrutosQcReportPayload = (payload = {}) => {
+  const checklist = ANALISE_FRUTOS_QC_CHECKLIST_TEMPLATE.map((item) => ({
+    key: item.key,
+    label: item.label,
+    value: "",
+    usaSimNao: Boolean(item.usaSimNao),
+  }));
+
+  const fotoPaths = collectAnaliseFrutosFotosForQc(payload);
+
+  const minimumSlots = 4;
+  const totalSlots = Math.max(minimumSlots, fotoPaths.length || 0);
+  const sections = [];
+  const sectionSize = 4;
+
+  for (let offset = 0; offset < totalSlots; offset += sectionSize) {
+    const chunkItems = [];
+    for (let i = 0; i < sectionSize; i += 1) {
+      const slot = offset + i;
+      if (slot >= totalSlots) break;
+
+      const fotoIndex = slot + 1;
+      const photoPath = fotoPaths[slot] || null;
+      const caption = ANALISE_FRUTOS_QC_FOTO_CAPTIONS[slot] || `Foto ${fotoIndex}`;
+      const label = `Foto ${fotoIndex} - ${caption}`;
+
+      chunkItems.push({
+        key: `foto_${fotoIndex}`,
+        label,
+        photos: photoPath ? [{ uri: photoPath }] : [],
+        totalPhotos: photoPath ? 1 : 0,
+      });
+    }
+
+    sections.push({
+      key: `variedade_${Math.floor(offset / sectionSize) + 1}`,
+      title: "VARIEDADES DE MANGA",
+      items: chunkItems,
+    });
+  }
+
+  return {
+    generalInfo: {
+      customer: asText(payload?.fazenda_talhao || payload?.fazenda, "-"),
+      container: asText(payload?.controle, "-"),
+      vessel: asText(payload?.variedade, "-"),
+      loading: formatPtBrDate(payload?.data),
+      etd: formatPtBrDate(payload?.data),
+      eta: formatPtBrDate(payload?.data),
+    },
+    checklist,
+    hidePalletData: true,
+    sections,
+  };
+};
+
 async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
   const now = new Date();
   const outputDir = options.outputDir || PASTA_PDFS;
@@ -526,26 +749,10 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
   ];
   const logoPath = logoCandidates.find((c) => fs.existsSync(c)) || null;
 
-  const fotosSalvas = Array.isArray(payload.fotos_salvas) ? payload.fotos_salvas : [];
+  const fotosSalvasRaw = parseMaybeJsonObject(payload.fotos_salvas, payload.fotos_salvas);
+  const fotosSalvas = Array.isArray(fotosSalvasRaw) ? fotosSalvasRaw : [];
   const fotoPaths = fotosSalvas
-    .map((foto) => {
-      if (foto?.caminho_relativo) {
-        const p = path.join(BACKEND_ROOT, foto.caminho_relativo);
-        if (fs.existsSync(p)) return p;
-      }
-      if (foto?.url && foto.url.includes("/analisefrutos/")) {
-        const partes = foto.url.split("/analisefrutos/")[1];
-        if (partes) {
-          const p = path.join(BACKEND_ROOT, "analisefrutos", partes);
-          if (fs.existsSync(p)) return p;
-        }
-      }
-      if (typeof foto === "string" && foto.trim()) {
-        const p = path.resolve(BACKEND_ROOT, foto.trim());
-        if (fs.existsSync(p)) return p;
-      }
-      return null;
-    })
+    .map((foto) => resolveAnaliseFrutosFotoPath(foto))
     .filter(Boolean);
 
   const normalizeCriterio = (value = "") => String(value || "")
@@ -556,7 +763,7 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
   const metricConfigs = [
     { key: "penetrometria", label: "PENETROMETRIA", match: /PENETROM/ },
     { key: "brix", label: "BRIX", match: /BRIX/ },
-    { key: "materiaSeca", label: "MATERIA SECA", match: /MATERIA\s*SECA|SECA/ },
+    { key: "materiaSeca", label: "MATÉRIA SECA", match: /MATERIA\s*SECA|SECA/ },
   ];
   const metricStats = metricConfigs.reduce((acc, config) => {
     acc[config.key] = { sum: 0, count: 0 };
@@ -850,7 +1057,7 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base" }));
 
   if (!danosInternosRows.length) {
-    danosInternosRows.push({ label: "Sem diagnostico informado", count: 0, placeholder: true });
+    danosInternosRows.push({ label: "Sem diagnóstico informado", count: 0, placeholder: true });
   }
 
   const totalDefeitoPayload = toPositiveInt(payload.total_defeito ?? payload.totalDefeito);
@@ -1049,7 +1256,7 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
       doc.fillColor(TEXT).font("Helvetica-Bold").fontSize(10.5)
         .text("BRIX", PM + colFruto + colMetric + 8, y + 8, { width: colMetric - 16, align: "center", lineBreak: false });
       doc.fillColor(TEXT).font("Helvetica-Bold").fontSize(10.5)
-        .text("MATERIA SECA", PM + colFruto + (colMetric * 2) + 8, y + 8, { width: colMetric - 16, align: "center", lineBreak: false });
+        .text("MATÉRIA SECA", PM + colFruto + (colMetric * 2) + 8, y + 8, { width: colMetric - 16, align: "center", lineBreak: false });
 
       return y + h;
     };
@@ -1130,45 +1337,53 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
     };
 
     const SHELF_METRIC_TITLE_H = 28;
-    const SHELF_METRIC_HEADER_H = 0;
-    const SHELF_METRIC_ROW_H = 28;
+    const SHELF_METRIC_HEADER_H = 22;
+    const SHELF_METRIC_ROW_H = 24;
 
     const getShelfMetricTableHeight = (rowsCount = 0) => {
-      return SHELF_METRIC_TITLE_H + (Math.max(0, rowsCount) * SHELF_METRIC_ROW_H);
+      return SHELF_METRIC_TITLE_H + SHELF_METRIC_HEADER_H + (Math.max(0, rowsCount) * SHELF_METRIC_ROW_H);
     };
 
-    const drawShelfMetricTitleRow = (y, title, { x = PM, w = CW, showPercent = false } = {}) => {
+    const drawShelfMetricTitleRow = (y, title, { x = PM, w = CW } = {}) => {
       const h = SHELF_METRIC_TITLE_H;
       doc.rect(x, y, w, h).fillAndStroke("#F1F3F0", "#D9DFD8");
       doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(12)
         .text(title, x + 10, y + 8, { width: w - 20, lineBreak: false });
-      if (showPercent) {
-        const percentW = Math.max(38, Math.floor(w * 0.12));
-        doc.fillColor(TEXT).font("Helvetica-Bold").fontSize(10)
-          .text("%", x + w - percentW + 2, y + 9, { width: percentW - 8, align: "left", lineBreak: false });
-      }
       return y + h;
     };
 
     const getShelfLifeChartHeight = (rows = [], chartTitle = "DISTRIBUIÇÃO DE DANOS INTERNOS (%)", chartFooter = "Percentual dos danos internos") => {
       const hasTitleRow = chartTitle && chartTitle.trim().length > 0;
-      const titleH = hasTitleRow ? 32 : 0;
-      const rowsTopPadding = 24;
-      const barRowH = 18;
-      const barGap = 12;
+      const titleH = hasTitleRow ? 28 : 0;
+      const headerH = 22;
+      const barRowH = SHELF_METRIC_ROW_H;
+      const barGap = 0;
       const axisSpace = 34;
       const footerSpace = chartFooter && chartFooter.trim().length > 0 ? 14 : 6;
       const validRows = rows.filter((row) => row.media !== null);
       const rowsCount = Math.max(1, validRows.length);
-      return titleH + rowsTopPadding + (rowsCount * barRowH) + ((rowsCount - 1) * barGap) + axisSpace + footerSpace;
+      return titleH + headerH + (rowsCount * barRowH) + ((rowsCount - 1) * barGap) + axisSpace + footerSpace;
     };
 
     const drawShelfMetricBackdrop = (y, h, { x = PM, w = CW } = {}) => {
       doc.rect(x, y, w, h).fillAndStroke("#FFFFFF", "#E0E0E0");
     };
 
-    const drawShelfMetricHeader = (y, { x = PM, w = CW } = {}) => {
-      return y;
+    const drawShelfMetricHeader = (y, { x = PM, w = CW, showPercent = true } = {}) => {
+      const h = SHELF_METRIC_HEADER_H;
+      const smw = Math.max(46, Math.floor(w * 0.14));
+      const slw = w - smw;
+
+      doc.rect(x, y, w, h).fillAndStroke("#F7F8F6", "#E5E9E4");
+      doc.moveTo(x + slw, y).lineTo(x + slw, y + h).strokeColor("#E5E9E4").lineWidth(0.55).stroke();
+
+      doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(9.4)
+        .text("Item", x + 8, y + 6, { width: slw - 16, lineBreak: false });
+      if (showPercent) {
+        doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(9.4)
+          .text("%", x + slw, y + 6, { width: smw - 8, align: "right", lineBreak: false });
+      }
+      return y + h;
     };
 
     const drawShelfMetricRow = (y, row, rowIndex = 0, rowNumber = null, { x = PM, w = CW } = {}) => {
@@ -1181,35 +1396,35 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
       doc.rect(x, y, w, h).fillAndStroke(fill, "#EDEDED");
       doc.moveTo(x + slw, y).lineTo(x + slw, y + h).strokeColor("#EDEDED").lineWidth(0.45).stroke();
       doc.fillColor(TEXT).font("Helvetica").fontSize(9.8)
-        .text(`${labelPrefix}${normalizeChartLabel(asText(row?.label, "-"))}`, x + 10, y + 9, { width: slw - 18, lineBreak: false });
+        .text(`${labelPrefix}${normalizeChartLabel(asText(row?.label, "-"))}`, x + 10, y + 7, { width: slw - 18, lineBreak: false });
       doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(10)
-        .text(asText(row?.mediaText, "-"), x + slw, y + 9, { width: smw - 8, align: "right", lineBreak: false });
+        .text(asText(row?.mediaText, "-"), x + slw, y + 7, { width: smw - 8, align: "right", lineBreak: false });
       return y + h;
     };
 
-    const drawShelfLifeChart = (y, rows = [], chartTitle = "DISTRIBUIÇÃO DE DANOS INTERNOS (%)", chartFooter = "Percentual dos danos internos", { forceAxisMax = 0, x = PM, w = CW, minHeight = 0, fixedHeight = 0, showPctAxis = false } = {}) => {
+    const drawShelfLifeChart = (y, rows = [], chartTitle = "DISTRIBUICAO DE DANOS INTERNOS (%)", chartFooter = "Percentual dos danos internos", { forceAxisMax = 0, x = PM, w = CW, minHeight = 0, fixedHeight = 0, showPctAxis = false } = {}) => {
       const hasTitleRow = chartTitle && chartTitle.trim().length > 0;
-      const titleH = hasTitleRow ? 32 : 0;
-      const rowsTopPadding = showPctAxis ? 4 : 24;
-      const barH = 14;
-      const barRowH = showPctAxis ? 22 : 18;
-      const barGap = showPctAxis ? 6 : 12;
+      const titleH = hasTitleRow ? 28 : 0;
+      const headerH = 22;
+      const barH = 12;
+      const barRowH = SHELF_METRIC_ROW_H;
+      const barGap = 0;
       const axisSpace = 34;
       const footerSpace = chartFooter && chartFooter.trim().length > 0 ? 14 : 6;
       const validRows = rows
         .filter((row) => row.media !== null)
         .slice();
-      const baseChartH = getShelfLifeChartHeight(rows, chartTitle, chartFooter);
+      const rowsCountForHeight = Math.max(1, validRows.length);
+      const baseChartH = titleH + headerH + (rowsCountForHeight * barRowH) + ((rowsCountForHeight - 1) * barGap) + axisSpace + footerSpace;
       const chartH = fixedHeight > 0 ? fixedHeight : Math.max(baseChartH, minHeight);
 
       doc.rect(x, y, w, chartH).fillAndStroke("#FFFFFF", "#E0E0E0");
       if (hasTitleRow) {
         doc.rect(x, y, w, titleH).fillAndStroke("#F1F3F0", "#D9DFD8");
         doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(12)
-          .text(chartTitle, x + 12, y + 10, { width: w - 24, lineBreak: false });
+          .text(chartTitle, x + 10, y + 8, { width: w - 20, lineBreak: false });
       }
 
-      // 3-column layout: label | bar | value
       const labelFontSize = showPctAxis ? 8.4 : 9;
       let labelW = showPctAxis
         ? Math.max(98, Math.floor(w * 0.34))
@@ -1220,13 +1435,7 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
       const barPad = showPctAxis ? 6 : 8;
       let barX = x + labelW + barPad;
       let barW = w - labelW - pctW - barPad * 2;
-      let cursorY = y + titleH + rowsTopPadding;
-
-      if (!validRows.length) {
-        doc.fillColor("#7F7F7F").font("Helvetica").fontSize(10)
-          .text("Sem dados para gráfico.", x + 12, cursorY + 2, { width: w - 24, lineBreak: false });
-        return y + chartH;
-      }
+      let cursorY = y + titleH;
 
       if (showPctAxis) {
         const maxLabelTextWidth = validRows.reduce((maxWidth, row) => {
@@ -1242,6 +1451,21 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
         barW = w - labelW - pctW - barPad * 2;
       }
 
+      doc.rect(x, cursorY, w, headerH).fillAndStroke("#F7F8F6", "#E5E9E4");
+      doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(9.4)
+        .text("Item", x + 8, cursorY + 6, { width: labelW - 12, lineBreak: false });
+      doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(9.4)
+        .text("Grafico", barX + 4, cursorY + 6, { width: barW - 8, align: "left", lineBreak: false });
+      doc.fillColor(GREEN_DARK).font("Helvetica-Bold").fontSize(9.4)
+        .text("%", barX + barW + 4, cursorY + 6, { width: pctW - 4, align: "right", lineBreak: false });
+      cursorY += headerH;
+
+      if (!validRows.length) {
+        doc.fillColor("#7F7F7F").font("Helvetica").fontSize(10)
+          .text("Sem dados para grafico.", x + 12, cursorY + 4, { width: w - 24, lineBreak: false });
+        return y + chartH;
+      }
+
       const maxMedia = Math.max(...validRows.map((r) => Number(r.media || 0)), 1);
       const axisMax = forceAxisMax > 0 ? forceAxisMax : Math.ceil(maxMedia / 5) * 5;
       const axisStep = showPctAxis ? 20 : (axisMax <= 10 ? 2 : axisMax <= 20 ? 5 : axisMax <= 50 ? 10 : 20);
@@ -1251,26 +1475,23 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
         const fillW = Math.max(0, Math.min(barW, (barW * val) / axisMax));
         const rowMidY = cursorY + Math.floor(barRowH / 2);
 
-        // Label — fixed width, no line break, normalized capitalization
+        doc.rect(x, cursorY, w, barRowH).fillAndStroke("#FFFFFF", "#EDEDED");
         doc.fillColor(TEXT).font("Helvetica").fontSize(labelFontSize)
-          .text(normalizeChartLabel(row.label), x + 8, rowMidY - 5, { width: labelW - 12, lineBreak: false });
+          .text(normalizeChartLabel(row.label), x + 8, rowMidY - 4, { width: labelW - 12, lineBreak: false });
 
-        // Bar background + fill
         doc.rect(barX, rowMidY - Math.floor(barH / 2), barW, barH).fill("#C9D0D7");
         if (fillW > 0) {
           doc.rect(barX, rowMidY - Math.floor(barH / 2), fillW, barH).fill(GREEN_DARK);
         }
 
-        // Value — right-aligned
         const pctTextX = barX + barW + 4;
         const valSuffix = showPctAxis && !String(row.mediaText || "").includes("%") ? "%" : "";
         doc.fillColor(TEXT).font("Helvetica-Bold").fontSize(showPctAxis ? 8.8 : 9.4)
-          .text((row.mediaText || "-") + valSuffix, pctTextX, rowMidY - 5, { width: pctW - 4, align: "right", lineBreak: false });
+          .text((row.mediaText || "-") + valSuffix, pctTextX, rowMidY - 4, { width: pctW - 4, align: "right", lineBreak: false });
 
         cursorY += barRowH + barGap;
       });
 
-      // Axis line starts exactly at barX
       const axisY = cursorY + 4;
       doc.moveTo(barX, axisY).lineTo(barX + barW, axisY).strokeColor("#BBBBBB").lineWidth(0.6).stroke();
       for (let tick = 0; tick <= axisMax; tick += axisStep) {
@@ -1344,18 +1565,62 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
       return y + h;
     };
 
+    const normalizeDiagKey = (label = "") =>
+      String(label || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .trim();
+
+    const getStageNumber = (label = "") => {
+      const normalized = normalizeDiagKey(label).replace(",", ".");
+      const match = normalized.match(/EST\s*([0-9]+(?:\.[0-9]+)?)/);
+      if (!match) return null;
+      const value = Number.parseFloat(match[1]);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const getDiagRank = (label = "") => {
+      const key = normalizeDiagKey(label);
+      if (key.includes("BRIX")) return 10;
+      if (key.includes("PENETROM")) return 20;
+      if (key.includes("MATERIA SECA")) return 30;
+      if (/^EST\b/.test(key) || key.includes(" EST")) return 40;
+      return 90;
+    };
+
+    const sortDiagnosticoRows = (rows = []) =>
+      [...rows].sort((a, b) => {
+        const rankA = getDiagRank(a?.label);
+        const rankB = getDiagRank(b?.label);
+        if (rankA !== rankB) return rankA - rankB;
+
+        // Para estágios, manter ordem decrescente (Est 2, Est 1,5, Est 1).
+        if (rankA === 40) {
+          const stageA = getStageNumber(a?.label);
+          const stageB = getStageNumber(b?.label);
+          if (stageA !== null && stageB !== null && stageA !== stageB) {
+            return stageB - stageA;
+          }
+        }
+
+        return String(a?.label || "").localeCompare(String(b?.label || ""), "pt-BR", {
+          sensitivity: "base",
+          numeric: true,
+        });
+      });
+
     let y = drawHeader({ showInfoBox: true });
 
     y = drawSectionHead(y, "1", "DADOS");
     const dadosRows = [
-      { label: "1.1 - Data de Analise", value: dataAnalise },
-      { label: "1.2 - Tipo de Analise", value: asText(payload.tipo_analise, "-") },
+      { label: "1.1 - Data de Análise", value: dataAnalise },
+      { label: "1.2 - Tipo de Análise", value: asText(payload.tipo_analise, "-") },
       { label: "1.3 - Fazenda/Produtor", value: asText(payload.fazenda_talhao, "-") },
-      { label: "1.4 - Talhao", value: asText(payload.talhao, "-") },
+      { label: "1.4 - Talhão", value: asText(payload.talhao, "-") },
       { label: "1.5 - Variedade", value: asText(payload.variedade, "-") },
       { label: "1.6 - Controle", value: asText(payload.controle, "-") },
-      { label: "1.7 - Criterio", value: asText(payload.criterio, "-") },
-      { label: "1.8 - Observacoes", value: asText(payload.observacoes, "-") },
+      { label: "1.7 - Observações", value: asText(payload.observacoes, "-") },
     ];
     dadosRows.forEach((row, index) => {
       y = drawDataRow(y, row.label, row.value, index);
@@ -1440,8 +1705,10 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
         const pctValue = Number.isFinite(pct) ? pct : 0;
         return { label: `Est ${row.estagio}`, mediaText: `${pctValue.toFixed(1)}`, media: pctValue };
       });
-      const diagnosticoRows = diagnosticoRowsBase.filter((row) => row.media !== 0 && row.media !== null);
-      const chartRows = diagnosticoRows.map((row, i) => ({ ...row, label: `2.${i + 1} - ${row.label}` }));
+      const diagnosticoRows = sortDiagnosticoRows(
+        diagnosticoRowsBase.filter((row) => row.media !== 0 && row.media !== null),
+      );
+      const chartRows = diagnosticoRows.map((row) => ({ ...row, label: row.label }));
 
       // Render table + chart together right after DADOS (same page)
       y += 10;
@@ -1465,8 +1732,7 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
         const chartSideX2 = PM + tableW2 + SIDE_GAP2;
         const sideSectionTopY2 = y;
         const tableBlockH2 = getShelfMetricTableHeight(diagnosticoRows.length);
-        const chartRowsCount2 = Math.max(1, chartRows.length);
-        const chartBlockH2 = 32 + 4 + (chartRowsCount2 * 22) + ((chartRowsCount2 - 1) * 6) + 34 + 6;
+        const chartBlockH2 = getShelfLifeChartHeight(chartRows, "Representacao Grafica", "");
         const sharedBlockH2 = Math.max(tableBlockH2, chartBlockH2);
 
         drawShelfMetricBackdrop(sideSectionTopY2, sharedBlockH2, { x: PM, w: tableW2 });
@@ -1510,17 +1776,9 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
         ...preColheitaMetricRowsProd,
       ];
 
-      const diagnosticoRows = [...diagnosticoRowsBase].filter((row) => row.media !== 0 && row.media !== null).sort((a, b) => {
-        const av = Number(a?.media);
-        const bv = Number(b?.media);
-        const aValue = Number.isFinite(av) ? av : Number.POSITIVE_INFINITY;
-        const bValue = Number.isFinite(bv) ? bv : Number.POSITIVE_INFINITY;
-        if (aValue !== bValue) return aValue - bValue;
-        return String(a?.label || "").localeCompare(String(b?.label || ""), "pt-BR", {
-          sensitivity: "base",
-          numeric: true,
-        });
-      });
+      const diagnosticoRows = sortDiagnosticoRows(
+        [...diagnosticoRowsBase].filter((row) => row.media !== 0 && row.media !== null),
+      );
 
       // Section 2: Avaliacao
       y += 10;
@@ -1542,10 +1800,9 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
         const chartSideW3 = CW - tableW3 - SIDE_GAP3;
         const chartSideX3 = PM + tableW3 + SIDE_GAP3;
         const sideSectionTopY3 = y;
-        const prodChartRows = diagnosticoRows.map((r, i) => ({ ...r, label: `2.${i + 1} - ${r.label}` }));
+        const prodChartRows = diagnosticoRows.map((r) => ({ ...r, label: r.label }));
         const tableBlockH3 = getShelfMetricTableHeight(diagnosticoRows.length);
-        const chartRowsCount3 = Math.max(1, prodChartRows.length);
-        const chartBlockH3 = 32 + 4 + (chartRowsCount3 * 22) + ((chartRowsCount3 - 1) * 6) + 34 + 6;
+        const chartBlockH3 = getShelfLifeChartHeight(prodChartRows, "Representacao Grafica", "");
         const sharedBlockH3 = Math.max(tableBlockH3, chartBlockH3);
 
         drawShelfMetricBackdrop(sideSectionTopY3, sharedBlockH3, { x: PM, w: tableW3 });
@@ -1601,13 +1858,13 @@ async function gerarRelatorioAnaliseFrutosPDFNovo(payload = {}, options = {}) {
     } else {
       y += 10;
       y = drawCalculationLogicBox(y);
-      y = drawSectionHead(y, "2", "AVALIACAO");
+      y = drawSectionHead(y, "2", "AVALIAÇÃO");
       y = drawAvaliacaoHeader(y);
       avaliacaoRows.forEach((row, rowIndex) => {
         if (y + 26 > BOT) {
           doc.addPage();
           y = drawHeader({ showInfoBox: false });
-          y = drawSectionHead(y, "2", "AVALIACAO");
+          y = drawSectionHead(y, "2", "AVALIAÇÃO");
           y = drawAvaliacaoHeader(y);
         }
         y = drawAvaliacaoRow(y, row, rowIndex);
@@ -1986,8 +2243,7 @@ export async function gerarRelatorioAnaliseFrutosPDF(payload = {}, options = {})
       ["1.2", "Fazenda", payload.fazenda_talhao],
       ["1.3", "Talhao", payload.talhao],
       ["1.4", "Variedade", payload.variedade],
-      ["1.5", "Criterio", payload.criterio],
-      ["1.6", "Observacoes", payload.observacoes],
+      ["1.5", "Observacoes", payload.observacoes],
     ];
     dataRows.forEach(([num, label, value]) => {
       if (curY + 22 > BOT) { addPage(); curY = doc.y; }
@@ -2120,20 +2376,6 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
       usaSimNao: Boolean(templateItem.usaSimNao),
     };
   });
-  const palletDefaultData = [
-    { pallet: "8565", etiqueta: "NC", temp1: "", temp2: "" },
-    { pallet: "8566", etiqueta: "NC", temp1: "", temp2: "" },
-    { pallet: "8568", etiqueta: "NC", temp1: "", temp2: "" },
-  ];
-  const palletDataSource = Array.isArray(payload.palletData) && payload.palletData.length
-    ? payload.palletData
-    : palletDefaultData;
-  const palletData = palletDataSource.map((row) => ({
-    pallet: asText(row?.pallet, "-"),
-    etiqueta: asText(row?.etiqueta, "NC"),
-    temp1: asText(row?.temp1, "-"),
-    temp2: asText(row?.temp2, "-"),
-  }));
   const sections = Array.isArray(payload.sections) ? payload.sections : [];
 
   const defaultSections = [
@@ -2168,74 +2410,6 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
     return null;
   };
 
-  const toPhotoCount = (item = {}) => {
-    const fromTotal = Number(item?.totalPhotos);
-    if (Number.isFinite(fromTotal)) return Math.max(0, Math.round(fromTotal));
-    return Array.isArray(item?.photos) ? item.photos.length : 0;
-  };
-
-  const sourceSections = sections.length ? sections : defaultSections;
-  const normalizedSections = sourceSections.map((section, sectionIndex) => {
-    const items = Array.isArray(section?.items) ? section.items : [];
-    return {
-      key: asText(section?.key, `section_${sectionIndex + 1}`),
-      title: asText(section?.title, `SECTION ${sectionIndex + 1}`),
-      items: items.map((item, itemIndex) => {
-        const photos = (Array.isArray(item?.photos) ? item.photos : []).map(normalizePhoto).filter(Boolean);
-        const totalPhotos = toPhotoCount(item);
-        return {
-          key: asText(item?.key, `item_${itemIndex + 1}`),
-          label: asText(item?.label, `Item ${itemIndex + 1}`),
-          photos,
-          totalPhotos,
-        };
-      }),
-    };
-  });
-
-  const chunkItems = (items, size) => {
-    const list = Array.isArray(items) ? items : [];
-    if (!list.length) return [];
-    const chunks = [];
-    for (let i = 0; i < list.length; i += size) {
-      chunks.push(list.slice(i, i + size));
-    }
-    return chunks;
-  };
-
-  const pageModels = [{ type: "summary", sectionTitle: "SUMMARY", items: [] }];
-  normalizedSections.forEach((section, sectionIndex) => {
-    const chunks = chunkItems(section.items, 6);
-    chunks.forEach((itemsChunk, chunkIndex) => {
-      pageModels.push({
-        type: "section",
-        sectionTitle: section.title,
-        items: itemsChunk,
-        showGeneralInfo: false,
-      });
-    });
-
-    if (!chunks.length) {
-      pageModels.push({
-        type: "section",
-        sectionTitle: section.title,
-        items: [],
-        showGeneralInfo: false,
-      });
-    }
-  });
-
-  const bannerCandidates = [
-    path.resolve(BACKEND_ROOT, "src/assets/logoagrodan.png"),
-    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/src/assets/logoagrodann.png"),
-    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/src/assets/logoagrodan.png"),
-    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/assets/logoagrodan.png"),
-    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/assets/logoagrodannn.png"),
-    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE/assets/embarque.png"),
-    path.resolve(BACKEND_ROOT, "assets/embarque.png"),
-  ];
-  const bannerPath = bannerCandidates.find((candidate) => fs.existsSync(candidate)) || null;
-
   const resolveImageSource = (photo) => {
     const uri = String(photo?.uri || "").trim();
     if (!uri) return null;
@@ -2254,6 +2428,73 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
     return null;
   };
 
+  const toPhotoCount = (item = {}) => {
+    const fromTotal = Number(item?.totalPhotos);
+    if (Number.isFinite(fromTotal)) return Math.max(0, Math.round(fromTotal));
+    return Array.isArray(item?.photos) ? item.photos.length : 0;
+  };
+
+  const sourceSections = sections.length ? sections : defaultSections;
+  const normalizedSections = sourceSections.map((section, sectionIndex) => {
+    const items = Array.isArray(section?.items) ? section.items : [];
+    const itemsWithContent = items
+      .map((item, itemIndex) => {
+        const photos = (Array.isArray(item?.photos) ? item.photos : []).map(normalizePhoto).filter(Boolean);
+        const imageSources = photos.map(resolveImageSource).filter(Boolean).slice(0, 4);
+        if (!imageSources.length) return null;
+
+        const totalPhotos = Math.max(toPhotoCount(item), imageSources.length);
+        return {
+          key: asText(item?.key, `item_${itemIndex + 1}`),
+          label: asText(item?.label, `Item ${itemIndex + 1}`),
+          photos,
+          imageSources,
+          totalPhotos,
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      key: asText(section?.key, `section_${sectionIndex + 1}`),
+      title: asText(section?.title, `SECTION ${sectionIndex + 1}`),
+      items: itemsWithContent,
+    };
+  }).filter((section) => section.items.length > 0);
+
+  const chunkItems = (items, size) => {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return [];
+    const chunks = [];
+    for (let i = 0; i < list.length; i += size) {
+      chunks.push(list.slice(i, i + size));
+    }
+    return chunks;
+  };
+
+  const pageModels = [{ type: "summary", sectionTitle: "SUMMARY", items: [] }];
+  normalizedSections.forEach((section) => {
+    const chunks = chunkItems(section.items, 6);
+    chunks.forEach((itemsChunk) => {
+      pageModels.push({
+        type: "section",
+        sectionTitle: section.title,
+        items: itemsChunk,
+        showGeneralInfo: false,
+      });
+    });
+  });
+
+  const bannerCandidates = [
+    path.resolve(BACKEND_ROOT, "src/assets/logoagrodan.png"),
+    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/src/assets/logoagrodann.png"),
+    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/src/assets/logoagrodan.png"),
+    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/assets/logoagrodan.png"),
+    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE_new/assets/logoagrodannn.png"),
+    path.resolve(BACKEND_ROOT, "../CONTROLEQUALIDADE/assets/embarque.png"),
+    path.resolve(BACKEND_ROOT, "assets/embarque.png"),
+  ];
+  const bannerPath = bannerCandidates.find((candidate) => fs.existsSync(candidate)) || null;
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 36, size: "A4" });
     const stream = fs.createWriteStream(caminhoArquivo);
@@ -2264,8 +2505,7 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
     const PAGE_BOTTOM_LIMIT = doc.page.height - 60;
 
     const drawPageBackground = () => {
-      doc.rect(0, 0, doc.page.width, doc.page.height).fill("#D9D9D9");
-      doc.rect(18, 18, doc.page.width - 36, doc.page.height - 36).fill("#F2F2F2");
+      doc.rect(0, 0, doc.page.width, doc.page.height).fill("#FFFFFF");
     };
 
     const drawHeaderBanner = () => {
@@ -2571,65 +2811,6 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
       return boxY + boxH + 12;
     };
 
-    const drawPalletTable = (startY) => {
-      if (!palletData.length) return startY;
-
-      let y = drawSectionHeader("PALLET DATA", startY);
-      y += 4;
-
-      const cols = [
-        { label: "Pallet", width: CONTENT_WIDTH * 0.20, key: "pallet" },
-        { label: "Etiqueta", width: CONTENT_WIDTH * 0.20, key: "etiqueta" },
-        { label: "Temp 1", width: CONTENT_WIDTH * 0.30, key: "temp1" },
-        { label: "Temp 2", width: CONTENT_WIDTH * 0.30, key: "temp2" },
-      ];
-      const rowH = 16;
-
-      // Header
-      let colX = PAGE_MARGIN;
-      doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, rowH).fill("#1D4A2B");
-      cols.forEach((col) => {
-        doc.fillColor("#FFFFFF")
-          .font("Helvetica-Bold")
-          .fontSize(7)
-          .text(col.label, colX + 2, y + 4, { width: col.width - 4, align: "center", lineBreak: false });
-        colX += col.width;
-      });
-      y += rowH;
-
-      palletData.forEach((row, idx) => {
-        if (y + rowH > PAGE_BOTTOM_LIMIT) {
-          doc.addPage();
-          drawPageBackground();
-          y = drawHeaderBanner();
-          y = drawSectionHeader("PALLET DATA (cont.)", y);
-          y += 4;
-        }
-
-        const bgColor = idx % 2 === 0 ? "#F9FBF9" : "#FFFFFF";
-        doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, rowH).fillAndStroke(bgColor, "#CFDACF");
-
-        const etiquetaValue = asText(row?.etiqueta, "-");
-        colX = PAGE_MARGIN;
-        cols.forEach((col) => {
-          const isEtiqueta = col.key === "etiqueta";
-          const textColor = isEtiqueta
-            ? (etiquetaValue === "C" ? "#2E7D32" : etiquetaValue === "NC" ? "#C62828" : "#222222")
-            : "#222222";
-          const fontName = isEtiqueta ? "Helvetica-Bold" : "Helvetica";
-
-          doc.fillColor(textColor)
-            .font(fontName)
-            .fontSize(7)
-            .text(col.key === "etiqueta" ? etiquetaValue : asText(row?.[col.key], "-"), colX + 2, y + 4, { width: col.width - 4, align: "center", lineBreak: false });
-          colX += col.width;
-        });
-        y += rowH;
-      });
-
-      return y + 12;
-    };
-
     const drawImageCover = (source, x, y, w, h) => {
       try {
         const image = doc.openImage(source);
@@ -2655,38 +2836,12 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
       }
     };
 
-    const drawPhotoPlaceholder = (x, y, w, h, text = "No photo added") => {
-      doc.rect(x, y, w, h).fillAndStroke("#F2F6F2", "#D6E0D6");
-
-      const iconW = 26;
-      const iconH = 16;
-      const iconX = x + ((w - iconW) / 2);
-      const iconY = y + (h * 0.42) - 14;
-      const lensR = 3;
-
-      doc.rect(iconX, iconY, iconW, iconH)
-        .lineWidth(1)
-        .strokeColor("#A9B3A9")
-        .stroke();
-
-      doc.rect(iconX + 6, iconY - 4, 8, 4).fill("#A9B3A9");
-      doc.circle(iconX + 13, iconY + 8, lensR)
-        .lineWidth(0.9)
-        .strokeColor("#A9B3A9")
-        .stroke();
-      doc.rect(iconX + iconW - 6, iconY + 3, 3, 3).fill("#EC8228");
-
-      doc.fillColor("#879387")
-        .font("Helvetica")
-        .fontSize(8.6)
-        .text(text, x, iconY + 24, {
-          width: w,
-          align: "center",
-          lineBreak: false,
-        });
-    };
-
     const drawItemCard = (item, x, y, w, h) => {
+      const imageSources = Array.isArray(item?.imageSources)
+        ? item.imageSources.slice(0, 4)
+        : (Array.isArray(item?.photos) ? item.photos : []).map(resolveImageSource).filter(Boolean).slice(0, 4);
+      if (!imageSources.length) return false;
+
       const titleHeight = 18;
       const labelGap = 3;
       const boxY = y + titleHeight;
@@ -2709,68 +2864,55 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
       const innerW = w - (innerPad * 2);
       const innerH = (boxH - labelGap) - (innerPad * 2);
 
-      const rawPhotos = Array.isArray(item?.photos) ? item.photos : [];
       const totalPhotos = Number.isFinite(Number(item?.totalPhotos))
         ? Math.max(0, Math.round(Number(item.totalPhotos)))
-        : rawPhotos.length;
-      const imageSources = rawPhotos.map(resolveImageSource).filter(Boolean).slice(0, 4);
+        : imageSources.length;
 
       if (imageSources.length === 1) {
-        if (drawImageCover(imageSources[0], innerX, innerY, innerW, innerH)) {
-          return;
-        }
+        drawImageCover(imageSources[0], innerX, innerY, innerW, innerH);
+        return true;
       }
 
-      if (imageSources.length > 1) {
-        const gap = 4;
-        const cols = 2;
-        const rows = Math.ceil(imageSources.length / cols);
-        const cellW = (innerW - gap) / cols;
-        const cellH = (innerH - (gap * (rows - 1))) / rows;
+      const gap = 4;
+      const cols = 2;
+      const rows = Math.ceil(imageSources.length / cols);
+      const cellW = (innerW - gap) / cols;
+      const cellH = (innerH - (gap * (rows - 1))) / rows;
 
-        imageSources.forEach((source, photoIndex) => {
-          const col = photoIndex % cols;
-          const row = Math.floor(photoIndex / cols);
-          const cellX = innerX + (col * (cellW + gap));
-          const cellY = innerY + (row * (cellH + gap));
+      imageSources.forEach((source, photoIndex) => {
+        const col = photoIndex % cols;
+        const row = Math.floor(photoIndex / cols);
+        const cellX = innerX + (col * (cellW + gap));
+        const cellY = innerY + (row * (cellH + gap));
 
-          doc.rect(cellX, cellY, cellW, cellH).fillAndStroke("#F2F6F2", "#D5E0D5");
-          if (!drawImageCover(source, cellX, cellY, cellW, cellH)) {
-            drawPhotoPlaceholder(cellX, cellY, cellW, cellH, "No photo");
-          }
-        });
+        doc.rect(cellX, cellY, cellW, cellH).fillAndStroke("#F2F6F2", "#D5E0D5");
+        drawImageCover(source, cellX, cellY, cellW, cellH);
+      });
 
-        if (totalPhotos > 4) {
-          const moreCount = totalPhotos - 4;
-          const badgeW = 30;
-          const badgeH = 16;
-          const badgeX = x + w - badgeW - 6;
-          const badgeY = boxY + boxH - badgeH - 6;
+      if (totalPhotos > 4) {
+        const moreCount = totalPhotos - 4;
+        const badgeW = 30;
+        const badgeH = 16;
+        const badgeX = x + w - badgeW - 6;
+        const badgeY = boxY + boxH - badgeH - 6;
 
-          doc.rect(badgeX, badgeY, badgeW, badgeH).fill("#2E6D34");
-          doc.fillColor("#FFFFFF")
-            .font("Helvetica-Bold")
-            .fontSize(8.2)
-            .text(`+${moreCount}`, badgeX, badgeY + 4, {
-              width: badgeW,
-              align: "center",
-              lineBreak: false,
-            });
-        }
-        return;
+        doc.rect(badgeX, badgeY, badgeW, badgeH).fill("#2E6D34");
+        doc.fillColor("#FFFFFF")
+          .font("Helvetica-Bold")
+          .fontSize(8.2)
+          .text(`+${moreCount}`, badgeX, badgeY + 4, {
+            width: badgeW,
+            align: "center",
+            lineBreak: false,
+          });
       }
 
-      drawPhotoPlaceholder(
-        innerX,
-        innerY,
-        innerW,
-        innerH,
-        totalPhotos > 0 ? `${totalPhotos} photo(s) registered` : "No photo added",
-      );
+      return true;
     };
 
     const drawFooter = (pageNumber, pageTotal) => {
-      const footerY = doc.page.height - 52;
+      // Mantem o rodape dentro da area util para evitar pagina extra em branco.
+      const footerY = doc.page.height - 66;
       doc.moveTo(PAGE_MARGIN, footerY - 8)
         .lineTo(PAGE_MARGIN + CONTENT_WIDTH, footerY - 8)
         .strokeColor("#D0D0D0")
@@ -2789,7 +2931,7 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
       doc.fillColor("#8E9690")
         .font("Helvetica-Bold")
         .fontSize(7.7)
-        .text(`${pageNumber} / ${pageTotal}`, PAGE_MARGIN, footerY + 10, {
+        .text(`${pageNumber} / ${pageTotal}`, PAGE_MARGIN, footerY + 9, {
           width: CONTENT_WIDTH,
           align: "right",
           lineBreak: false,
@@ -2807,9 +2949,6 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
       if (pageModel.type === "summary") {
         cursorY = drawGeneralInfo(cursorY);
         cursorY = drawChecklistStyled(cursorY);
-        if (palletData.length) {
-          cursorY = drawPalletTable(cursorY);
-        }
       } else {
         cursorY = drawSectionHeader(pageModel.sectionTitle || "SECTION", cursorY);
 
@@ -2817,19 +2956,7 @@ export async function gerarRelatorioEmbarqueSedePDF(payload = {}, options = {}) 
         const gridBottom = PAGE_BOTTOM_LIMIT;
         const items = Array.isArray(pageModel.items) ? pageModel.items : [];
 
-        if (!items.length) {
-          const emptyHeight = Math.max(120, gridBottom - gridTop);
-          doc.rect(PAGE_MARGIN, gridTop, CONTENT_WIDTH, emptyHeight).fillAndStroke("#EEF3EE", "#D9E0D9");
-          const noItemsText = "No photo added";
-          const textHeight = doc.heightOfString(noItemsText, { width: CONTENT_WIDTH - 20, align: "center" });
-          doc.fillColor("#8D9490")
-            .font("Helvetica-Bold")
-            .fontSize(11.5)
-            .text(noItemsText, PAGE_MARGIN + 10, gridTop + ((emptyHeight - textHeight) / 2), {
-              width: CONTENT_WIDTH - 20,
-              align: "center",
-            });
-        } else {
+        if (items.length) {
           const cols = 2;
           const rows = Math.max(1, Math.ceil(items.length / cols));
           const gapX = 14;

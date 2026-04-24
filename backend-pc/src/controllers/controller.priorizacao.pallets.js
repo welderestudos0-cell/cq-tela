@@ -479,7 +479,24 @@ const BuscarPalletDados = async (req, res) => {
       params: { pallet },
       timeout: 15000,
     });
-    return res.json({ success: true, data: Array.isArray(data) ? data : [] });
+    const rows = Array.isArray(data) ? data : [];
+
+    console.log(`\n===== [PalletDados] pallet=${pallet} =====`);
+    console.log(JSON.stringify(rows.map((r) => ({
+      planpal: r.PLANPAL_IN_CODIGO ?? r.planpal,
+      oc: r.PLANCARREG_IN_CODIGO ?? r.oc,
+      container: r.PLANCARREG_ST_NROCONTAINER ?? r.container,
+      controle: r.COMPA_IN_NROCONTROLE ?? r.CONTROLE ?? r.controle,
+      variedade: r.VARIEDADE ?? r.variedade,
+      fazenda: r.FAZENDA ?? r.fazenda,
+      talhao: r.TALHAO ?? r.talhao,
+      qtd_caixas: r.QTD_CAIXAS ?? r.qtd_caixas,
+      calibre: r.CALIB_IN_CODIGO ?? r.calibre,
+      etiqueta: r.ETIQUETA ?? r.etiqueta,
+    })), null, 2));
+    console.log("==========================================\n");
+
+    return res.json({ success: true, data: rows });
   } catch (error) {
     console.error("[PalletDados] Erro:", error.message);
     return res.status(502).json({ success: false, error: "Falha ao buscar dados do pallet." });
@@ -494,10 +511,36 @@ const BuscarPorOC = async (req, res) => {
     if (!oc) return res.status(400).json({ success: false, error: "Parâmetro 'oc' é obrigatório." });
 
     const priorizacao = await repoPriorizacao.BuscarPorOC(oc);
-    if (!priorizacao) return res.json({ success: true, data: null });
+    if (!priorizacao) {
+      console.log(`\n========== [Container Selecionado] OC: ${oc} — sem dados salvos ==========\n`);
+      return res.json({ success: true, data: null });
+    }
 
     const pallets = await repoPalletsPriorizacao.ListarPorPriorizacao(priorizacao.id);
     const checklist = await repoChecklistContainer.BuscarPorPriorizacao(priorizacao.id);
+
+    console.log("\n========== [Container Selecionado] ==========");
+    console.log(JSON.stringify({
+      oc: priorizacao.oc,
+      container: priorizacao.nro_container || priorizacao.container,
+      apelido: priorizacao.apelido,
+      safra: priorizacao.safra,
+      data_saida: priorizacao.data_saida,
+      motorista: priorizacao.motorista,
+      total_pallets: pallets.length,
+      pallets: pallets.map((p) => ({
+        planpal: p.planpal,
+        controle: p.controle,
+        variedade: p.variedade,
+        fazenda: p.fazenda,
+        qtd_caixas: p.qtd_caixas,
+        etiqueta: p.etiqueta,
+        temperatura_1: p.temperatura_1,
+        temperatura_2: p.temperatura_2,
+      })),
+      checklist,
+    }, null, 2));
+    console.log("=============================================\n");
 
     return res.json({ success: true, data: { priorizacao, pallets, checklist } });
   } catch (error) {
@@ -514,6 +557,31 @@ const SalvarCompleto = async (req, res) => {
     const body = req.body;
     const pallets = Array.isArray(body.pallets) ? body.pallets : [];
     const checklistArr = Array.isArray(body.checklist) ? body.checklist : [];
+
+    console.log("\n========== [Priorizacao] PAYLOAD RECEBIDO ==========");
+    console.log(JSON.stringify({
+      oc: body.oc,
+      safra: body.safra,
+      apelido: body.apelido,
+      container: body.container,
+      data_saida: body.data_saida,
+      motorista: body.motorista,
+      total_pallets: pallets.length,
+      pallets: pallets.map((p) => ({
+        planpal: p.planpal,
+        controle: p.controle,
+        variedade: p.variedade,
+        fazenda: p.fazenda,
+        qtd_caixas: p.qtd_caixas,
+        calibre: p.calibre,
+        classe_prod: p.classe_prod,
+        etiqueta: p.etiqueta,
+        temperatura_1: p.temperatura_1,
+        temperatura_2: p.temperatura_2,
+      })),
+      checklist: checklistArr.map((i) => ({ key: i.key, value: i.value, temperatura: i.temperatura })),
+    }, null, 2));
+    console.log("=====================================================\n");
 
     // 1. Verificar se já existe priorizacao para esta OC
     const existente = await repoPriorizacao.BuscarPorOC(body.oc);

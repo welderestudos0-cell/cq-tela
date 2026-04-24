@@ -128,6 +128,7 @@ router.get("/maturacaoforcada/:id", controllerMaturacaoForcada.BuscarPorId);
 router.post("/analise-frutos", uploadAnaliseFrutos, controllerAnaliseFrutos.Salvar);
 router.post("/analise-frutos/teste-pdf", uploadAnaliseFrutos, controllerAnaliseFrutos.GerarTestePdf);
 router.get("/analise-frutos/diagnostico-rede", controllerAnaliseFrutos.DiagnosticoRede);
+router.get("/analise-frutos/fotos-por-controle", controllerAnaliseFrutos.FotosPorControle);
 router.get("/analise-frutos/fotos/*", controllerAnaliseFrutos.ServirFoto);
 router.get("/analise-frutos", controllerAnaliseFrutos.Listar);
 router.get("/analise-frutos/:id", controllerAnaliseFrutos.BuscarPorId);
@@ -196,9 +197,11 @@ router.get("/relatorio-embarque-sede/:id", controllerRelatorioEmbarqueSede.Busca
 
 // ========== ROTAS BUSCA GENÉRICA LOCAL (substitui 10.107.114.11:3000/backend) ==========
 router.get("/backend/busca_generica/comandoGenerico", controllerBuscaGenerica.ComandoGenerico);
+router.post("/backend/sincronizar-fazenda-talhao", controllerBuscaGenerica.SincronizarFazendaTalhao);
 
 // ========== ROTAS DE CARREGAMENTOS (LOCAL SQLite) ==========
 router.get("/carregamentos", controllerCarregamentos.BuscarCarregamentos);
+router.get("/carregamentos/por-container", controllerCarregamentos.BuscarPorContainer);
 router.post("/carregamentos/avaliacao-container", controllerCarregamentos.InserirAvaliacaoContainer);
 
 // ========== ROTAS DE CADASTRO DE MANGA (Fazenda/Variedade/Controle) ==========

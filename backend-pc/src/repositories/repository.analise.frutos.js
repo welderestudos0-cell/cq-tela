@@ -6,6 +6,7 @@ const BASE_COLUMNS = [
   "tipo_analise",
   "fazenda_talhao",
   "talhao",
+  "safra",
   "semana",
   "data_ref",
   "controle",
@@ -28,6 +29,7 @@ const CREATE_TABLE_SQL = `
     tipo_analise TEXT,
     fazenda_talhao TEXT,
     talhao TEXT,
+    safra TEXT,
     semana INTEGER,
     data_ref TEXT,
     controle INTEGER,
@@ -90,6 +92,10 @@ const criarTabela = async () => {
     ["pdf_path", "TEXT"],
     ["json_path", "TEXT"],
     ["payload_json", "TEXT"],
+    ["api_externa_enviado", "INTEGER DEFAULT 0"],
+    ["api_externa_enviado_em", "TEXT"],
+    ["api_externa_linhas", "INTEGER DEFAULT 0"],
+    ["safra", "TEXT"],
   ];
 
   for (const [name, definition] of additions) {
@@ -151,6 +157,7 @@ const Inserir = async (data) => {
       case "tipo_analise": return cleanText(data.tipo_analise);
       case "fazenda_talhao": return cleanText(data.fazenda_talhao);
       case "talhao": return cleanText(data.talhao);
+      case "safra": return cleanText(data.safra);
       case "semana": return toInt(data.semana, 0);
       case "data_ref": return cleanText(data.data_ref);
       case "controle": return toInt(data.controle, 0);
@@ -158,7 +165,7 @@ const Inserir = async (data) => {
       case "qtd_frutos": return toInt(data.qtd_frutos, 0);
       case "criterio": return cleanText(data.criterio);
       case "observacoes": return cleanText(data.observacoes);
-      case "peso_final_caixa": return toFloat(data.peso_final_caixa, 0);
+      case "peso_final_caixa": return toFloatOrNull(data.peso_final_caixa);
       case "frutos_count": return toInt(data.frutos_count, 0);
       case "lotes_count": return toInt(data.lotes_count, 0);
       case "pdf_path": return cleanText(data.pdf_path);
@@ -355,6 +362,19 @@ const ListarLotesPendentes = async (limit = 100) => {
   return rows;
 };
 
+const MarcarEnviadoApiExterna = async (form_id, linhas = 0) => {
+  await query(
+    `UPDATE ${TABLE_NAME}
+     SET api_externa_enviado = 1,
+         api_externa_enviado_em = datetime('now'),
+         api_externa_linhas = ?,
+         updated_at = datetime('now')
+     WHERE form_id = ?`,
+    [linhas, String(form_id)],
+    "run"
+  );
+};
+
 export default {
   Inserir,
   InserirLotes,
@@ -365,5 +385,6 @@ export default {
   Remover,
   MarcarEnviado,
   MarcarEnviadoLotes,
+  MarcarEnviadoApiExterna,
 };
 

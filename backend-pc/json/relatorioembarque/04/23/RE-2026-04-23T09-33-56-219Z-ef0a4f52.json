@@ -1,0 +1,221 @@
+{
+  "metaInfo": {
+    "analysisDate": "",
+    "farm": "",
+    "talhao": "",
+    "variety": "NOA"
+  },
+  "generalInfo": {
+    "customer": "VINTAGE",
+    "container": "2026-17 VINTAGE",
+    "oc": "103052",
+    "loading": "24/04/2026",
+    "etd": "",
+    "eta": "",
+    "vessel": ""
+  },
+  "checklist": [
+    {
+      "key": "interior_limpo",
+      "label": "1. Interior do container está limpo (livre de odor, sem materiais estranhos, madeira, insetos, etc.)",
+      "value": null
+    },
+    {
+      "key": "sem_estragos_borrachas",
+      "label": "2. Container sem estragos (borrachas da porta estão em bom estado)",
+      "value": null
+    },
+    {
+      "key": "drenagem_aberta",
+      "label": "3. Drenagem do container está aberta",
+      "value": null
+    },
+    {
+      "key": "refrigeracao_operando",
+      "label": "4. Maquinário de refrigeração está operando corretamente",
+      "value": null
+    },
+    {
+      "key": "pre_resfriado",
+      "label": "5. Container está pré-resfriado na temperatura correta",
+      "value": null,
+      "temperatura": ""
+    },
+    {
+      "key": "ventilacao_exposta",
+      "label": "6. Ventilação do container exposta",
+      "value": null,
+      "usaSimNao": true
+    },
+    {
+      "key": "ventilacao_40cbm",
+      "label": "7. Ventilação a 40 CBM",
+      "value": null
+    },
+    {
+      "key": "identificacao_correta",
+      "label": "8. A identificação/documentação do container está correta",
+      "value": null
+    },
+    {
+      "key": "sensores_funcionando",
+      "label": "9. Foi verificado se os sensores de temperatura estão funcionando corretamente",
+      "value": null
+    },
+    {
+      "key": "registradores_posicao",
+      "label": "10. Registradores portáteis de temperatura foram colocados na posição correta na carga",
+      "value": null
+    },
+    {
+      "key": "absorvedor_etileno",
+      "label": "11. Foi feito uso de absorvedor de etileno",
+      "value": null,
+      "usaSimNao": true
+    },
+    {
+      "key": "sanitizado_acido",
+      "label": "12. O container foi sanitizado com solução a base de ácido peracético",
+      "value": null
+    },
+    {
+      "key": "qualidade_paletizacao",
+      "label": "13. Qualidade da paletização (fitas, estrado e alinhamento das caixas). Não conformes",
+      "value": null
+    },
+    {
+      "key": "carga_temperatura_correta",
+      "label": "14. A carga está na temperatura correta (temperatura média de polpa)",
+      "value": null
+    },
+    {
+      "key": "lacre_colocado",
+      "label": "15. Lacre está devidamente colocado na porta do container",
+      "value": null
+    },
+    {
+      "key": "temperatura_saida",
+      "label": "16. Temperatura de saída do container",
+      "value": null,
+      "temperatura": ""
+    }
+  ],
+  "palletData": [
+    {
+      "pallet": "8565",
+      "etiqueta": "NC",
+      "temp1": "",
+      "temp2": ""
+    },
+    {
+      "pallet": "8566",
+      "etiqueta": "NC",
+      "temp1": "",
+      "temp2": ""
+    },
+    {
+      "pallet": "8568",
+      "etiqueta": "NC",
+      "temp1": "",
+      "temp2": ""
+    }
+  ],
+  "sections": [
+    {
+      "key": "manga_noa",
+      "title": "MANGO NOA",
+      "totalPhotos": 1,
+      "items": [
+        {
+          "key": "appearance",
+          "label": "Appearance",
+          "totalPhotos": 1
+        },
+        {
+          "key": "pulp_temperature",
+          "label": "Pulp temperature",
+          "totalPhotos": 0
+        },
+        {
+          "key": "maturity",
+          "label": "Maturity",
+          "totalPhotos": 0
+        },
+        {
+          "key": "firmness",
+          "label": "Firmness",
+          "totalPhotos": 0
+        }
+      ]
+    },
+    {
+      "key": "container",
+      "title": "CONTAINER",
+      "totalPhotos": 1,
+      "items": [
+        {
+          "key": "maturacao_variedade",
+          "label": "Maturity by variety",
+          "totalPhotos": 0
+        },
+        {
+          "key": "firmeza_variedade",
+          "label": "Firmness by variety",
+          "totalPhotos": 0
+        },
+        {
+          "key": "temp_polpa_variedade",
+          "label": "Pulp temperatures by variety",
+          "totalPhotos": 0
+        },
+        {
+          "key": "espelho_pallet_variedade",
+          "label": "Pallet mirror by variety",
+          "totalPhotos": 1
+        },
+        {
+          "key": "set_point_container",
+          "label": "Container set point",
+          "totalPhotos": 0
+        },
+        {
+          "key": "foto_4_drenos",
+          "label": "Four drains",
+          "totalPhotos": 0
+        },
+        {
+          "key": "foto_numeracao_interna",
+          "label": "Internal numbering",
+          "totalPhotos": 0
+        },
+        {
+          "key": "foto_numeracao_externa",
+          "label": "External numbering",
+          "totalPhotos": 0
+        },
+        {
+          "key": "foto_termografo",
+          "label": "Thermograph",
+          "totalPhotos": 0
+        },
+        {
+          "key": "foto_container_lacrado",
+          "label": "Sealed container",
+          "totalPhotos": 0
+        },
+        {
+          "key": "foto_lacre",
+          "label": "Seal number",
+          "totalPhotos": 0
+        }
+      ]
+    }
+  ],
+  "form_id": "RE-2026-04-23T09-33-56-219Z-ef0a4f52",
+  "data_referencia": "23/04/2026",
+  "created_at": "2026-04-23T09:33:56.219Z",
+  "arquivos": {
+    "pdf_relative_path": "relatorioembarque/04/23/RE-2026-04-23T09-33-56-219Z-ef0a4f52.pdf",
+    "json_relative_path": "json/relatorioembarque/04/23/RE-2026-04-23T09-33-56-219Z-ef0a4f52.json"
+  }
+}

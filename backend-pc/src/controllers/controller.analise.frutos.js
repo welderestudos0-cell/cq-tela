@@ -6,8 +6,254 @@ import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
+import axios from "axios";
 
 import { FOTOS_ROOT, BACKEND_ROOT } from "../config/storage.js";
+
+const ANALISE_FRUTOS_EXTERNAL_API = "http://10.107.114.11:3002/analise_de_frutos";
+const SAFRA_TALHAO_API = "http://10.107.114.11:3000/backend/busca_generica/comandoGenerico";
+const SAFRA_TALHAO_SQL = "SELECT * FROM AGDTI.DXDW_VW_SAFRA_TALHAO";
+
+// Calcula a semana ISO 8601 no formato YYYYWW (ex: 202617)
+const getSemanaAtual = () => {
+  const now = new Date();
+  const date = new Date(now);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
+  const yearStart = new Date(date.getFullYear(), 0, 4);
+  const week = 1 + Math.round(((date - yearStart) / 86400000 - 3 + ((yearStart.getDay() + 6) % 7)) / 7);
+  return `${date.getFullYear()}${String(week).padStart(2, "0")}`;
+};
+
+// Busca a safra correspondente ao talhão e semana atual na view Oracle.
+const buscarSafraPorTalhao = async (talhao) => {
+  try {
+    const talhaoNorm = String(talhao || "").trim().toLowerCase();
+    if (!talhaoNorm) return null;
+
+    const { data } = await axios.get(SAFRA_TALHAO_API, {
+      params: { comando: SAFRA_TALHAO_SQL },
+      timeout: 10000,
+    });
+
+    const rows = Array.isArray(data) ? data : (Array.isArray(data?.rows) ? data.rows : []);
+    const semanaAtual = getSemanaAtual();
+
+    const match = rows.find((row) => {
+      const descricao = String(row?.TALH_ST_DESCRICAO || "").trim().toLowerCase();
+      if (descricao !== talhaoNorm) return false;
+
+      const inicio = String(row?.DATA_INICIO_CICLO || "").trim();
+      const fim    = String(row?.DATA_FIM_CICLO    || "").trim();
+
+      if (!inicio) return false;
+      if (semanaAtual < inicio) return false;
+      if (fim && semanaAtual > fim) return false;
+      return true;
+    });
+
+    const safra = match?.SAFRA_ST_CODIGO || null;
+    console.log(`[SafraTalhao] talhao="${talhao}" semana=${semanaAtual} → safra=${safra ?? "não encontrada"}`);
+    return safra;
+  } catch (err) {
+    console.warn("[SafraTalhao] Falha ao buscar safra:", err.message);
+    return null;
+  }
+};
+
+// Remove registros antigos da API externa por data + fazenda + talhao + controle + safra
+const deletarRegistrosApiExterna = async ({ data, fazenda, talhao, controle, safra }) => {
+  const normalizeDateOnly = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+    return raw;
+  };
+
+  const dataNorm = normalizeDateOnly(data);
+  const fazendaNorm = String(fazenda || "").trim().toUpperCase();
+  const controleNorm = String(controle || "");
+  const talhaoNorm = String(talhao || "");
+  const safraNorm = String(safra || "").trim().toUpperCase();
+
+  let existentes = [];
+  try {
+    const { data } = await axios.get(ANALISE_FRUTOS_EXTERNAL_API, {
+      params: {
+        data: dataNorm,
+        fazenda: String(fazenda || ""),
+        fundo_agricola: String(fazenda || ""),
+        controle: controleNorm,
+        talhao: talhaoNorm,
+        safra: safraNorm,
+        limit: 1000,
+      },
+      timeout: 10000,
+    });
+    existentes = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+  } catch (error) {
+    console.warn("[AnaliseFrutos][API Externa] Falha ao listar registros antigos para limpeza:", error?.response?.data || error?.message);
+    throw error;
+  }
+
+  const numerosDosFrutos = Array.from(new Set(
+    existentes
+      .filter((row) => {
+        const rowData = normalizeDateOnly(row?.DATA ?? row?.data ?? "");
+        const rowFazenda = String(row?.FUNDO_AGRICOLA ?? row?.fundo_agricola ?? row?.FAZENDA ?? row?.fazenda ?? "").trim().toUpperCase();
+        const rowSafra = String(row?.SAFRA ?? row?.safra ?? "").trim().toUpperCase();
+        const okData = !dataNorm || rowData === dataNorm;
+        const okFazenda = !fazendaNorm || rowFazenda === fazendaNorm;
+        const okSafra = !safraNorm || rowSafra === safraNorm;
+        return okData && okFazenda && okSafra;
+      })
+      .map((row) => String(row?.NUMERO_FRUTO ?? row?.numero_fruto ?? "").trim())
+      .filter(Boolean)
+  ));
+
+  if (!numerosDosFrutos.length) {
+    console.log(`[AnaliseFrutos][API Externa] DELETE (edição): nenhum registro antigo encontrado para data=${dataNorm || "-"} fazenda=${fazendaNorm || "-"} controle=${controleNorm} talhao=${talhaoNorm} safra=${safraNorm || "-"}`);
+    return { deleted: 0, notFound: 0, errors: [] };
+  }
+
+  const resultados = await Promise.allSettled(
+    numerosDosFrutos.map(async (numero_fruto) => {
+      try {
+        await axios.delete(ANALISE_FRUTOS_EXTERNAL_API, {
+          params: {
+            data: dataNorm,
+            fazenda: String(fazenda || ""),
+            fundo_agricola: String(fazenda || ""),
+            safra: safraNorm,
+            controle: controleNorm,
+            talhao: talhaoNorm,
+            numero_fruto: numero_fruto,
+          },
+          timeout: 10000,
+        });
+        return { numero_fruto, status: "deleted" };
+      } catch (error) {
+        const status = error?.response?.status;
+        if (status === 404) {
+          return { numero_fruto, status: "not_found" };
+        }
+        throw error;
+      }
+    })
+  );
+
+  const deleted = resultados.filter((r) => r.status === "fulfilled" && r.value?.status === "deleted").length;
+  const notFound = resultados.filter((r) => r.status === "fulfilled" && r.value?.status === "not_found").length;
+  const errors = resultados.filter((r) => r.status === "rejected");
+
+  console.log(`[AnaliseFrutos][API Externa] DELETE (edição): removidos=${deleted} não_encontrados=${notFound} erros=${errors.length} (data=${dataNorm || "-"} fazenda=${fazendaNorm || "-"} controle=${controleNorm} talhao=${talhaoNorm} safra=${safraNorm || "-"})`);
+
+  return { deleted, notFound, errors };
+};
+
+// Envia cada lote como uma linha separada para a API externa (em background, sem bloquear resposta).
+const enviarParaApiExterna = async (payload, frutos, lotes) => {
+  try {
+    // DD/MM/YYYY → YYYY-MM-DD
+    const converterData = (dataStr) => {
+      const s = String(dataStr || "").trim();
+      const match = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+      return s;
+    };
+
+    // Número com vírgula como separador decimal (padrão Oracle/Brasil)
+    const formatarValor = (v) => {
+      if (v === null || v === undefined || v === "") return "";
+      return String(Number(v).toFixed(1)).replace(".", ",");
+    };
+
+    const agora = new Date();
+    const momento = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+
+    const fazenda   = String(payload.fazenda_talhao || payload.fazenda || "");
+    const talhao    = String(payload.talhao || "");
+    const variedade = String(payload.variedade || "");
+
+    // Busca safra pela semana atual + talhão na Oracle; fallback para payload.safra
+    const safraOracle = await buscarSafraPorTalhao(talhao);
+    const safra = safraOracle || String(payload.safra || "M26");
+
+    const base = {
+      tipo_analise:  String(payload.tipo_analise || ""),
+      fundo_agricola: fazenda,
+      fazenda_talhao: [fazenda, talhao, variedade].filter(Boolean).join(" - "),
+      talhao,
+      safra,
+      semana:        String(payload.semana || ""),
+      data:          converterData(payload.data),
+      controle:      String(payload.controle || ""),
+      variedade,
+      qtd_frutos:    String(frutos.length || ""),
+      momento,
+    };
+
+    // Uma linha por lote (numero_fruto + criterio + valor)
+    const rows = (lotes || []).map((lote) => {
+      const fruto = frutos.find((f) => f.numero_fruto === lote.numero_fruto) || {};
+      return {
+        ...base,
+        criterio:      String(lote.criterio || ""),
+        numero_fruto:  String(lote.numero_fruto || ""),
+        valor:         formatarValor(lote.valor),
+        danos_internos: String(fruto.danos_internos || ""),
+      };
+    });
+
+    if (!base.controle) {
+      console.warn("[AnaliseFrutos][API Externa] Campo 'controle' vazio. Envio externo cancelado.");
+      return;
+    }
+
+    const isEdicao = Boolean(payload?._is_edicao_api_externa);
+    console.log(`[AnaliseFrutos][API Externa] Iniciando envio — controle=${base.controle} isEdicao=${isEdicao}`);
+
+    console.log(`[AnaliseFrutos][API Externa] ${isEdicao ? "EDIÇÃO (DELETE + POST)" : "NOVO (POST)"} — ${rows.length} linha(s)`);
+    console.log("[AnaliseFrutos][API Externa] Exemplo linha:", JSON.stringify(rows[0], null, 2));
+
+    if (isEdicao) {
+      const deleteResult = await deletarRegistrosApiExterna({
+        data: base.data,
+        fazenda: base.fundo_agricola,
+        talhao: base.talhao,
+        controle: base.controle,
+        safra: base.safra,
+      });
+      if (deleteResult.errors.length > 0) {
+        const firstError = deleteResult.errors[0]?.reason;
+        throw new Error(`Falha ao limpar registros antigos para edição: ${firstError?.response?.data?.detail || firstError?.message || "erro desconhecido"}`);
+      }
+    }
+
+    const resultados = await Promise.allSettled(
+      rows.map(async (row) => {
+        return axios.post(ANALISE_FRUTOS_EXTERNAL_API, row, { timeout: 10000 });
+      })
+    );
+
+    const ok    = resultados.filter((r) => r.status === "fulfilled").length;
+    const erros = resultados.filter((r) => r.status === "rejected");
+    console.log(`[AnaliseFrutos][API Externa] OK: ${ok} | Erro: ${erros.length}`);
+    erros.forEach((r, i) => {
+      console.error(`[AnaliseFrutos][API Externa] Erro linha ${i}:`, r.reason?.response?.data || r.reason?.message);
+    });
+
+    if (ok > 0 && payload.form_id) {
+      await repositoryAnaliseFrutos.MarcarEnviadoApiExterna(payload.form_id, ok);
+      console.log(`[AnaliseFrutos][API Externa] Marcado no banco: form_id=${payload.form_id} linhas=${ok}`);
+    }
+  } catch (err) {
+    console.error("[AnaliseFrutos][API Externa] Falha geral:", err.message, err.response?.data);
+  }
+};
 
 // LOCAL: tudo (pdf, json, fotos) em analise_frutos/{tipo}/{fazenda}/{variedade}/{controle}/{data}/
 const ANALISE_FRUTOS_ROOT = path.join(BACKEND_ROOT, "analise_frutos");
@@ -26,16 +272,18 @@ const ensureDir = (dir) => {
   fs.mkdirSync(dir, { recursive: true });
 };
 
-// Copia recursivamente um diretório para a rede (fotos)
-const copyDirToNetwork = (srcDir, destDir, logPrefix = "[Upload]") => {
+// Copia recursivamente um diretório para a rede (fotos).
+// skipFilter(name) → true para pular o arquivo.
+const copyDirToNetwork = (srcDir, destDir, logPrefix = "[Upload]", skipFilter = null) => {
   try {
     if (!fs.existsSync(srcDir)) return;
     const entries = fs.readdirSync(srcDir, { withFileTypes: true });
     ensureDir(destDir);
     entries.forEach((e) => {
+      if (skipFilter && skipFilter(e.name)) return;
       const s = path.join(srcDir, e.name);
       const d = path.join(destDir, e.name);
-      if (e.isDirectory()) copyDirToNetwork(s, d, logPrefix);
+      if (e.isDirectory()) copyDirToNetwork(s, d, logPrefix, skipFilter);
       else fs.copyFileSync(s, d);
     });
     console.log(`${logPrefix} Copiado para rede: ${destDir}`);
@@ -101,21 +349,50 @@ const formatDateFolder = (date = new Date()) => {
   return `${y}-${m}-${d}`;
 };
 
-// Monta caminho local e URL para fotos de producao (firmeza/maturacao/danos_internos)
-// LOCAL e REDE usam a mesma estrutura: producao/{fazenda}/{variedade}/{controle}/{YYYY-MM-DD}/{campo}
-const getFotosProdDir = (fazenda, talhao, variedade, controle, campo, date = new Date()) => {
-  const faz  = sanitizeFolder(fazenda,   "sem_fazenda");
-  const vari = sanitizeFolder(variedade, "sem_variedade");
-  const ctrl = sanitizeFolder(controle,  "sem_controle");
-  const cam  = sanitizeFolder(campo,     "geral");
-  const dt   = formatDateFolder(date);
-  if (fazendaTemTalhao(fazenda)) {
-    const tal = sanitizeFolder(talhao, "sem_talhao");
-    return { dir: path.join(ANALISE_FRUTOS_ROOT, "producao", faz, tal, vari, ctrl, dt, cam),
-             urlPath: `producao/${faz}/${tal}/${vari}/${ctrl}/${dt}/${cam}` };
+const sanitizeWeekFolder = (semana) => {
+  const week = String(semana ?? "").trim();
+  const normalized = sanitizeFolder(week, "sem_semana");
+  return /^semana_/i.test(normalized) ? normalized : `semana_${normalized}`;
+};
+
+const parsePayloadDate = (value, fallback = new Date()) => {
+  const raw = String(value || "").trim();
+  const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const dt = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    if (!Number.isNaN(dt.getTime())) return dt;
   }
-  return { dir: path.join(ANALISE_FRUTOS_ROOT, "producao", faz, vari, ctrl, dt, cam),
-           urlPath: `producao/${faz}/${vari}/${ctrl}/${dt}/${cam}` };
+  const iso = new Date(raw);
+  if (!Number.isNaN(iso.getTime())) return iso;
+  return fallback;
+};
+
+const buildFotoProdBaseName = (fazenda, talhao, variedade, controle) => {
+  const partes = [
+    sanitizeFolder(fazenda, "sem_fazenda"),
+    sanitizeFolder(talhao, "sem_talhao"),
+    sanitizeFolder(variedade, "sem_variedade"),
+    sanitizeFolder(controle, "sem_controle"),
+  ].filter(Boolean);
+
+  return partes.join("_") || "foto_producao";
+};
+
+// Monta caminho local e URL para fotos de producao.
+// Estrutura: analise_frutos/analiseproducao/semana_<semana>/foto
+const getFotosProdDir = (fazenda, talhao, variedade, controle, semana) => {
+  const semanaDir = sanitizeWeekFolder(semana);
+  return {
+    dir: path.join(ANALISE_FRUTOS_ROOT, "analiseproducao", semanaDir, "foto"),
+    urlPath: `analiseproducao/${semanaDir}/foto`,
+    fileBaseName: buildFotoProdBaseName(fazenda, talhao, variedade, controle),
+  };
+};
+
+// Monta caminho de REDE para fotos de producao - mesma estrutura do local
+const getFotosProdDirNetwork = (semana) => {
+  const semanaDir = sanitizeWeekFolder(semana);
+  return path.join(ANALISE_FRUTOS_NETWORK_ROOT, "analiseproducao", semanaDir, "foto");
 };
 
 // Calcula o diretório LOCAL: {tipo}/{fazenda}/{variedade}/{controle}/{YYYY-MM-DD}
@@ -181,24 +458,32 @@ const fileFilter = (req, file, cb) => {
 
 const resolveDestDir = (req, file) => {
   const isProdCampo = PRODUCAO_CAMPOS_FOTOS.some((c) => file.fieldname === `fotos_${c}`);
-  if (isProdCampo) {
-    const campo = file.fieldname.replace("fotos_", "");
+  
+  // Se for campo de produção E tiver semana, é análise de produção
+  if (isProdCampo && req.body?.semana) {
     const { dir } = getFotosProdDir(
       req.body?.fazenda_talhao || req.body?.fazenda,
       req.body?.talhao,
       req.body?.variedade,
       req.body?.controle,
-      campo,
-      new Date(),
+      req.body?.semana,
     );
     return dir;
   }
+  
   const tipo = normalizeTipo(req.body?.tipo_analise);
   const { fotosDir } = getDateParts(new Date(), tipo, {
     fazenda: req.body?.fazenda_talhao || req.body?.fazenda,
     variedade: req.body?.variedade,
     controle: req.body?.controle,
   });
+  
+  // Se for fotos de campo geral (firmeza, maturacao, danos_internos), salvar em subpasta
+  if (isProdCampo) {
+    const campo = file.fieldname.replace("fotos_", "");
+    return path.join(fotosDir, campo);
+  }
+  
   return fotosDir;
 };
 
@@ -223,6 +508,36 @@ const storage = multer.diskStorage({
     req._fotoCount[dir]++;
     const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
     const safeExt = ext === ".jpeg" ? ".jpg" : ext;
+    const isProdCampo = PRODUCAO_CAMPOS_FOTOS.some((c) => file.fieldname === `fotos_${c}`);
+    
+    // Campos por tipo (firmeza/maturacao/danos_internos):
+    // usa o mesmo padrão da análise de produção também no Shelf Life.
+    if (isProdCampo && req.body?.semana) {
+      const campo = file.fieldname.replace("fotos_", "");
+      const { fileBaseName } = getFotosProdDir(
+        req.body?.fazenda_talhao || req.body?.fazenda,
+        req.body?.talhao,
+        req.body?.variedade,
+        req.body?.controle,
+        req.body?.semana,
+      );
+      cb(null, `${fileBaseName}_${req._fotoCount[dir]}_${campo}${safeExt}`);
+      return;
+    }
+    
+    // Shelf Life/Pré-Colheita com fotos por campo (sem semana): mantém padrão completo.
+    if (isProdCampo) {
+      const campo = file.fieldname.replace("fotos_", "");
+      const fileBaseName = buildFotoProdBaseName(
+        req.body?.fazenda_talhao || req.body?.fazenda,
+        req.body?.talhao,
+        req.body?.variedade,
+        req.body?.controle,
+      );
+      cb(null, `${fileBaseName}_${req._fotoCount[dir]}_${campo}${safeExt}`);
+      return;
+    }
+    
     cb(null, `foto_${req._fotoCount[dir]}${safeExt}`);
   },
 });
@@ -253,8 +568,27 @@ const Salvar = async (req, res) => {
     if (typeof payload.lotes === "string") {
       try { payload.lotes = JSON.parse(payload.lotes); } catch {}
     }
+    if (typeof payload.maturacao_dist === "string") {
+      try { payload.maturacao_dist = JSON.parse(payload.maturacao_dist); } catch {}
+    }
     const frutos = Array.isArray(payload.frutos) ? payload.frutos : [];
     const lotes = Array.isArray(payload.lotes) ? payload.lotes : [];
+
+    console.log("\n========== [AnaliseFrutos] PAYLOAD RECEBIDO ==========");
+    console.log(JSON.stringify({
+      fazenda: payload.fazenda_talhao || payload.fazenda,
+      talhao: payload.talhao,
+      variedade: payload.variedade,
+      controle: payload.controle,
+      semana: payload.semana,
+      tipo_analise: payload.tipo_analise,
+      data: payload.data,
+      frutos,
+      lotes,
+      maturacao_dist: payload.maturacao_dist,
+      fotos_producao_salvas: payload.fotos_producao_salvas,
+    }, null, 2));
+    console.log("=======================================================\n");
 
     if (!frutos.length) {
       return res.status(400).json({
@@ -271,13 +605,44 @@ const Salvar = async (req, res) => {
     // Se vier form_id existente, sobrescreve o registro anterior (fluxo de edicao no app).
     if (payload?.form_id) {
       try {
+        // Remove registro do SQLite
         await repositoryAnaliseFrutos.Remover(payload.form_id);
+
+        // Remove pasta de fotos antiga na rede (por_controle) para substituir pelas novas
+        const tipo_ = normalizeTipo(payload.tipo_analise);
+        const faz_  = sanitizeFolder(payload.fazenda_talhao || payload.fazenda, "sem_fazenda");
+        const vari_ = sanitizeFolder(payload.variedade, "sem_variedade");
+        const ctrl_ = sanitizeFolder(payload.controle, "sem_controle");
+        const dataEdicao = parsePayloadDate(payload.data || payload.data_ref, new Date());
+        const oldNetworkDir = getNetworkDir(
+          tipo_,
+          payload.fazenda_talhao || payload.fazenda,
+          payload.talhao,
+          payload.variedade,
+          payload.controle,
+          dataEdicao,
+        );
+        [oldNetworkDir, path.join(ANALISE_FRUTOS_NETWORK_ROOT, "analiseproducao", "por_controle", faz_, vari_, ctrl_)].forEach((dir) => {
+          try {
+            if (fs.existsSync(dir)) {
+              fs.rmSync(dir, { recursive: true, force: true });
+              console.log(`[AnaliseFrutos] Pasta antiga removida: ${dir}`);
+            }
+          } catch (e) {
+            console.warn(`[AnaliseFrutos] Falha ao remover pasta antiga: ${e.message}`);
+          }
+        });
       } catch (removeError) {
         console.warn("[AnaliseFrutos] Falha ao remover registro anterior para edicao:", removeError?.message);
       }
     }
 
-    const formId = buildServerFormId(payload.form_id || payload.formId || payload.id, now);
+    const rawIncomingFormId = payload.form_id || payload.formId || payload.id;
+    const hadIncomingPersistentId = Boolean(String(rawIncomingFormId || "").trim())
+      && !/offline/i.test(String(rawIncomingFormId));
+    const isEditRequest = Boolean(payload?.edicao || payload?.is_edicao || payload?.isEdit || hadIncomingPersistentId);
+
+    const formId = buildServerFormId(rawIncomingFormId, now);
     const skipJsonFiles = shouldSkipJsonFilesForRequest(req);
 
     const tipo = normalizeTipo(payload.tipo_analise);
@@ -292,6 +657,7 @@ const Salvar = async (req, res) => {
 
     const totalFiles = files.length + PRODUCAO_CAMPOS_FOTOS.reduce((s, c) => s + (filesMap[`fotos_${c}`]?.length || 0), 0);
     console.log(`[AnaliseFrutos] Recebidas ${totalFiles} foto(s). Tipo: ${tipo}, Pasta: ${fotosFolder}`);
+
     files.forEach((f, i) => console.log(`  foto[${i}]: ${f.filename} (${f.size} bytes) -> ${f.destination}`));
 
     const fotosSalvas = files.map((file) => ({
@@ -304,17 +670,46 @@ const Salvar = async (req, res) => {
       url: `/api/analise-frutos/fotos/${fotosFolder}/${encodeURIComponent(file.filename)}`,
     }));
 
+    // Fotos gerais de campo (sem semana/produção) - adicionadas às fotos gerais
+    const fotosGeraisByCampo = {};
+    if (!payload.semana) {
+      for (const campo of PRODUCAO_CAMPOS_FOTOS) {
+        const campoFiles = filesMap[`fotos_${campo}`] || [];
+        if (campoFiles.length) {
+          const campoFotos = campoFiles.map((file) => ({
+            form_id: formId,
+            nome: file.filename,
+            original_nome: file.originalname,
+            mimetype: file.mimetype,
+            tamanho: file.size,
+            caminho_relativo: `${fotosFolder}/${campo}/${file.filename}`,
+            url: `/api/analise-frutos/fotos/${fotosFolder}/${campo}/${encodeURIComponent(file.filename)}`,
+          }));
+          fotosGeraisByCampo[campo] = campoFotos;
+          console.log(`  [geral/${campo}]: ${campoFiles.length} foto(s) novas`);
+        }
+      }
+    }
+    // Mesclar fotos gerais de campo com fotos genéricas
+    const todasFotosGerais = [
+      ...fotosSalvas,
+      ...Object.values(fotosGeraisByCampo).flat(),
+    ];
+
     // Fotos por campo de producao (firmeza, maturacao, danos_internos)
     const fotosProdByCampo = {};
     for (const campo of PRODUCAO_CAMPOS_FOTOS) {
       const campoFiles = filesMap[`fotos_${campo}`] || [];
+      
+      // Só processa como produção se tiver semana
+      if (!payload.semana) continue;
+      
       const { urlPath } = getFotosProdDir(
         payload.fazenda_talhao || payload.fazenda,
         payload.talhao,
         payload.variedade,
         payload.controle,
-        campo,
-        now,
+        payload.semana,
       );
       const novasFotos = campoFiles.map((file) => ({
         form_id: formId,
@@ -334,24 +729,153 @@ const Salvar = async (req, res) => {
         try { savedProdFotos_raw = JSON.parse(savedProdFotos_raw); } catch {}
       }
       const savedCampoFotos = Array.isArray(savedProdFotos_raw?.[campo]) ? savedProdFotos_raw[campo] : [];
+
+      // Busca o arquivo pelo disk_path direto ou pelo nome em locais conhecidos
+      const resolverDiskPath = (item) => {
+        if (item?.disk_path && fs.existsSync(item.disk_path)) return item.disk_path;
+        if (item?.url && typeof item.url === "string") {
+          const marker = "/api/analise-frutos/fotos/";
+          const idx = item.url.indexOf(marker);
+          if (idx >= 0) {
+            const rel = decodeURIComponent(item.url.slice(idx + marker.length));
+            const fromRoot = path.join(ANALISE_FRUTOS_ROOT, ...rel.split("/").filter(Boolean));
+            if (fs.existsSync(fromRoot)) return fromRoot;
+          }
+        }
+        if (item?.nome) {
+          const { dir: semanaDir } = getFotosProdDir(
+            payload.fazenda_talhao || payload.fazenda, payload.talhao,
+            payload.variedade, payload.controle, payload.semana,
+          );
+          const candidates = [
+            path.join(semanaDir, item.nome),
+            path.join(pdfDir, campo, item.nome),
+            path.join(ANALISE_FRUTOS_ROOT, "analiseproducao", sanitizeWeekFolder(payload.semana), "foto", item.nome),
+          ];
+          for (const c of candidates) {
+            if (fs.existsSync(c)) return c;
+          }
+        }
+        return null;
+      };
+
       const fotosSalvasCampo = savedCampoFotos
-        .filter((item) => item?.disk_path && fs.existsSync(item.disk_path))
-        .map((item) => ({ ...item, form_id: formId }));
+        .map((item) => {
+          const resolved = resolverDiskPath(item);
+          return resolved
+            ? { ...item, disk_path: resolved, form_id: formId }
+            : { ...item, form_id: formId };
+        })
+        .filter((item) => item && (item.url || item.nome || item.disk_path));
       if (fotosSalvasCampo.length) console.log(`  [producao/${campo}]: ${fotosSalvasCampo.length} foto(s) existentes`);
 
-      const todasFotosCampo = [...fotosSalvasCampo, ...novasFotos];
+      // Se vieram fotos novas → substitui as antigas; senão mantém as existentes
+      const todasFotosCampo = novasFotos.length > 0 ? novasFotos : fotosSalvasCampo;
       if (todasFotosCampo.length) fotosProdByCampo[campo] = todasFotosCampo;
     }
 
-    const existingFotos = Array.isArray(payload.fotos_salvas) ? payload.fotos_salvas : [];
-    const allFotos = [...existingFotos, ...fotosSalvas];
+    let _fotosSalvasRaw = payload.fotos_salvas;
+    if (typeof _fotosSalvasRaw === 'string') { try { _fotosSalvasRaw = JSON.parse(_fotosSalvasRaw); } catch {} }
+    const existingFotos = Array.isArray(_fotosSalvasRaw) ? _fotosSalvasRaw : [];
+
+    // No Shelf Life/Pré-Colheita, quando editar e enviar nova foto de um campo,
+    // substitui as antigas do mesmo campo (igual comportamento da produção).
+    const camposComFotoNovaSemSemana = !payload.semana
+      ? PRODUCAO_CAMPOS_FOTOS.filter((c) => (filesMap[`fotos_${c}`] || []).length > 0)
+      : [];
+
+    const fotoPertenceAoCampo = (foto, campo) => {
+      const hints = [
+        String(foto?.caminho_relativo || ""),
+        String(foto?.url || ""),
+        String(foto?.nome || ""),
+        String(foto?.disk_path || ""),
+      ].join(" ").toLowerCase();
+
+      if (hints.includes(`/${campo}/`)) return true;
+      if (hints.includes(`\\${campo}\\`)) return true;
+      if (hints.includes(`_${campo}.`)) return true;
+      if (hints.includes(`_${campo}_`)) return true;
+      return false;
+    };
+
+    const existingFotosFiltradas = camposComFotoNovaSemSemana.length
+      ? existingFotos.filter((foto) => !camposComFotoNovaSemSemana.some((campo) => fotoPertenceAoCampo(foto, campo)))
+      : existingFotos;
+
+    if (camposComFotoNovaSemSemana.length) {
+      console.log(`[AnaliseFrutos] Edição sem semana: substituindo fotos antigas dos campos ${camposComFotoNovaSemSemana.join(", ")}`);
+    }
+
+    const allFotos = [...existingFotosFiltradas, ...todasFotosGerais];
 
     const nomeArquivoPdf = `${formId}.pdf`;
+
+    // Log para debug das fotos antes do PDF
+    console.log("[AnaliseFrutos] fotosProdByCampo para PDF:");
+    for (const [campo, fotos] of Object.entries(fotosProdByCampo)) {
+      fotos.forEach((f) => {
+        const existe = f.disk_path ? fs.existsSync(f.disk_path) : false;
+        console.log(`  ${campo}: ${f.nome} | disk_path existe: ${existe} | path: ${f.disk_path}`);
+      });
+    }
+    if (!Object.keys(fotosProdByCampo).length) console.log("  (vazio — sem fotos de produção)");
+
     await gerarRelatorioAnaliseFrutosPDF({ ...payload, fotos_salvas: allFotos, fotos_producao: fotosProdByCampo, layout: "novo" }, {
       outputDir: pdfDir,
       fileName: nomeArquivoPdf,
       layout: "novo",
     });
+
+    // Após PDF gerado: apaga arquivos ANTIGOS dos campos que tiveram nova foto (semana_17/foto)
+    // Faz isso depois do PDF para não afetar a geração
+    if (isEditRequest && payload.semana) {
+      const camposComFotoNova = PRODUCAO_CAMPOS_FOTOS.filter((c) => (filesMap[`fotos_${c}`] || []).length > 0);
+      if (camposComFotoNova.length) {
+        const { dir: semanaFotoDir } = getFotosProdDir(
+          payload.fazenda_talhao || payload.fazenda, payload.talhao,
+          payload.variedade, payload.controle, payload.semana,
+        );
+        // Pega os nomes das novas fotos para não deletá-las
+        const novosNomes = new Set(
+          camposComFotoNova.flatMap((c) => (filesMap[`fotos_${c}`] || []).map((f) => f.filename))
+        );
+        try {
+          if (fs.existsSync(semanaFotoDir)) {
+            const ctrlNorm = sanitizeFolder(payload.controle, "").toLowerCase();
+            fs.readdirSync(semanaFotoDir).forEach((arq) => {
+              if (novosNomes.has(arq)) return; // não apaga o novo
+              const arqLow = arq.toLowerCase();
+              const ehCampoComFotoNova = camposComFotoNova.some((c) => arqLow.includes(`_${c}`));
+              if (arqLow.includes(`_${ctrlNorm}_`) && ehCampoComFotoNova) {
+                try { fs.unlinkSync(path.join(semanaFotoDir, arq)); } catch {}
+              }
+            });
+            console.log(`[AnaliseFrutos] Fotos antigas substituídas para campos: ${camposComFotoNova.join(', ')}`);
+          }
+        } catch (e) {
+          console.warn(`[AnaliseFrutos] Falha ao limpar fotos antigas: ${e.message}`);
+        }
+      }
+    }
+
+    // Salva fotos de producao localmente em producao/FAZ/VAR/CTRL/DATE/campo/
+    if (Object.keys(fotosProdByCampo).length) {
+      for (const [campo, fotos] of Object.entries(fotosProdByCampo)) {
+        const campoLocalDir = path.join(pdfDir, campo);
+        ensureDir(campoLocalDir);
+        for (const foto of fotos) {
+          if (foto.disk_path && fs.existsSync(foto.disk_path)) {
+            try {
+              fs.copyFileSync(foto.disk_path, path.join(campoLocalDir, foto.nome));
+            } catch (e) {
+              console.warn(`[AnaliseFrutos] Falha ao copiar ${foto.nome} localmente/${campo}: ${e.message}`);
+            }
+          }
+        }
+      }
+      console.log(`[AnaliseFrutos] Fotos por campo salvas localmente: ${pdfDir}`);
+    }
 
     // Copia PDF + JSON + fotos para a pasta de rede (mesma estrutura do local)
     let networkWarning = null;
@@ -361,8 +885,237 @@ const Salvar = async (req, res) => {
       ensureDir(networkDir);
       fs.copyFileSync(path.join(pdfDir, nomeArquivoPdf), path.join(networkDir, nomeArquivoPdf));
       console.log(`[AnaliseFrutos] PDF salvo na rede OK`);
-      // Copia fotos (subpastas campo) para a rede também
-      copyDirToNetwork(pdfDir, networkDir, "[AnaliseFrutos Fotos]");
+      // Copia fotos (subpastas campo) para a rede, pulando PDFs (o real já foi copiado acima)
+      copyDirToNetwork(pdfDir, networkDir, "[AnaliseFrutos Fotos]", (name) => name.endsWith('.pdf'));
+      
+      // Copia fotos de producao por campo para pasta estruturada na rede:
+      // producao/FAZ/VAR/CTRL/DATE/firmeza/, /maturacao/, /danos_internos/
+      if (Object.keys(fotosProdByCampo).length) {
+        for (const [campo, fotos] of Object.entries(fotosProdByCampo)) {
+          const campoNetworkDir = path.join(networkDir, campo);
+          ensureDir(campoNetworkDir);
+          for (const foto of fotos) {
+            if (foto.disk_path && fs.existsSync(foto.disk_path)) {
+              try {
+                fs.copyFileSync(foto.disk_path, path.join(campoNetworkDir, foto.nome));
+              } catch (e) {
+                console.warn(`[AnaliseFrutos] Falha ao copiar ${foto.nome} para rede/${campo}: ${e.message}`);
+              }
+            }
+          }
+        }
+        console.log(`[AnaliseFrutos] Fotos por campo copiadas para rede: ${networkDir}`);
+      }
+
+      // Mantém cópia flat em analiseproducao/semana_XX/foto/ (estrutura agregada por semana)
+      const fotoProdLocalDir = getFotosProdDir(
+        payload.fazenda_talhao || payload.fazenda,
+        payload.talhao,
+        payload.variedade,
+        payload.controle,
+        payload.semana,
+      ).dir;
+      const fotoProdNetworkDir = getFotosProdDirNetwork(payload.semana);
+      if (fs.existsSync(fotoProdLocalDir)) {
+        copyDirToNetwork(fotoProdLocalDir, fotoProdNetworkDir, "[AnaliseFrutos Producao]");
+      }
+
+      // Cópia para pasta de carregamentos 2026 — independe de fotoProdLocalDir existir
+      const CARREGAMENTOS_BASE = "\\\\192.168.0.201\\agrodan\\PACKING HOUSE\\PACKING HOUSE - SEDE\\Packing\\CONTROLE DE QUALIDADE 2\\MATERIAL PARA CARREGAMENTOS 2026\\MATURAÇÃO SEDE 2026\\APLICATIVO CQ";
+      try {
+        const tipoDir = String(payload.tipo_analise || "")
+          .normalize("NFD").replace(/[̀-ͯ]/g, "")
+          .replace(/[^a-zA-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim().toUpperCase()
+          || "ANALISE";
+        const semanaDir = sanitizeWeekFolder(payload.semana).replace(/^semana_/i, '');
+        const carregamentosDir = path.join(CARREGAMENTOS_BASE, tipoDir, semanaDir);
+        ensureDir(carregamentosDir);
+
+        const faz  = sanitizeFolder(payload.fazenda_talhao || payload.fazenda, "sem_fazenda");
+        const vari = sanitizeFolder(payload.variedade, "sem_variedade");
+        const ctrl = sanitizeFolder(payload.controle, "sem_controle");
+        const dia  = String(now.getDate()).padStart(2, "0");
+        const nomePdfCustom = `AF-${faz}-${vari}-${ctrl}-${dia}.pdf`;
+
+        // Em edição: apaga arquivos antigos do controle
+        if (payload.form_id && fs.existsSync(carregamentosDir)) {
+          const ctrlLow = ctrl.toLowerCase();
+          const baseFotoName = buildFotoProdBaseName(
+            payload.fazenda_talhao || payload.fazenda,
+            payload.talhao,
+            payload.variedade,
+            payload.controle,
+          ).toLowerCase();
+          let removidos = 0;
+          fs.readdirSync(carregamentosDir).forEach((arq) => {
+            const arqLow = arq.toLowerCase();
+            const matchControle =
+              arqLow.includes(`_${ctrlLow}_`)
+              || arqLow.includes(`-${ctrlLow}-`)
+              || arqLow.startsWith(`${baseFotoName}_`)
+              || arqLow === nomePdfCustom.toLowerCase();
+            if (matchControle) {
+              try { fs.unlinkSync(path.join(carregamentosDir, arq)); removidos++; } catch {}
+            }
+          });
+          if (removidos) console.log(`[AnaliseFrutos Carregamentos] ${removidos} arquivo(s) antigos removidos`);
+        }
+
+        // Copia fotos do controle atual — produção (fotosProdByCampo) + gerais (allFotos)
+        let fotosCopiadasCarreg = 0;
+
+        // Fotos de produção (firmeza, maturacao, danos_internos)
+        for (const [, fotos] of Object.entries(fotosProdByCampo)) {
+          for (const foto of fotos) {
+            if (foto.disk_path && fs.existsSync(foto.disk_path)) {
+              try {
+                fs.copyFileSync(foto.disk_path, path.join(carregamentosDir, foto.nome));
+                fotosCopiadasCarreg++;
+              } catch (e) {
+                console.warn(`[AnaliseFrutos Carregamentos] Falha ao copiar ${foto.nome}: ${e.message}`);
+              }
+            }
+          }
+        }
+
+        // Fotos gerais (Shelf Life, Pré-Colheita, etc.)
+        // Usa allFotos para incluir também fotos antigas preservadas na edição.
+        if (!Object.keys(fotosProdByCampo).length) {
+          const resolveFotoGeralPath = (foto) => {
+            if (!foto) return null;
+
+            const candidates = [];
+            if (foto.disk_path) candidates.push(String(foto.disk_path));
+            if (foto.caminho_relativo) {
+              const rel = String(foto.caminho_relativo);
+              candidates.push(path.join(ANALISE_FRUTOS_ROOT, rel));
+              candidates.push(path.join(BACKEND_ROOT, rel));
+            }
+            if (foto.url && typeof foto.url === "string") {
+              const marker = "/api/analise-frutos/fotos/";
+              const idx = foto.url.indexOf(marker);
+              if (idx >= 0) {
+                const rel = decodeURIComponent(foto.url.slice(idx + marker.length));
+                candidates.push(path.join(ANALISE_FRUTOS_ROOT, ...rel.split("/").filter(Boolean)));
+              }
+            }
+            if (foto.nome) {
+              candidates.push(path.join(pdfDir, String(foto.nome)));
+            }
+
+            return candidates.find((c) => c && fs.existsSync(c)) || null;
+          };
+
+          const baseFotoName = buildFotoProdBaseName(
+            payload.fazenda_talhao || payload.fazenda,
+            payload.talhao,
+            payload.variedade,
+            payload.controle,
+          );
+
+          const inferCampoFoto = (foto, srcPath = "") => {
+            const hints = [
+              String(foto?.caminho_relativo || ""),
+              String(foto?.url || ""),
+              String(foto?.nome || ""),
+              String(srcPath || ""),
+            ].join(" ").toLowerCase();
+
+            if (hints.includes("firmeza")) return "firmeza";
+            if (hints.includes("maturacao")) return "maturacao";
+            if (hints.includes("danos_internos") || hints.includes("danos-internos")) return "danos_internos";
+            return "geral";
+          };
+
+          let fotoSeq = 0;
+          const nextFotoName = (foto, srcPath = "") => {
+            fotoSeq += 1;
+            const campo = inferCampoFoto(foto, srcPath);
+            const ext = (path.extname(String(srcPath || foto?.nome || "")) || ".jpg").toLowerCase();
+            return `${baseFotoName}_${fotoSeq}_${campo}${ext}`;
+          };
+
+          const copiedNames = new Set();
+          const copiedSources = new Set();
+          try {
+            const gerais = Array.isArray(allFotos) ? allFotos : [];
+            gerais.forEach((foto) => {
+              const src = resolveFotoGeralPath(foto);
+              if (!src) return;
+
+              const originalName = String(foto?.nome || "").trim() || path.basename(src);
+              if (!/\.(jpg|jpeg|png|webp)$/i.test(originalName)) return;
+              const fileName = nextFotoName(foto, originalName);
+              if (copiedNames.has(fileName.toLowerCase())) return;
+
+              try {
+                fs.copyFileSync(src, path.join(carregamentosDir, fileName));
+                copiedNames.add(fileName.toLowerCase());
+                copiedSources.add(path.resolve(src).toLowerCase());
+                fotosCopiadasCarreg++;
+              } catch (e) {
+                console.warn(`[AnaliseFrutos Carregamentos] Falha ao copiar ${fileName}: ${e.message}`);
+              }
+            });
+
+            // Fallback: varre diretório atual para garantir fotos novas sem metadata
+            if (fs.existsSync(pdfDir)) {
+              fs.readdirSync(pdfDir).forEach((arq) => {
+                if (!/\.(jpg|jpeg|png|webp)$/i.test(arq)) return;
+                const src = path.join(pdfDir, arq);
+                const srcKey = path.resolve(src).toLowerCase();
+                if (copiedSources.has(srcKey)) return;
+                const fileName = nextFotoName(null, arq);
+                if (copiedNames.has(fileName.toLowerCase())) return;
+                try {
+                  fs.copyFileSync(src, path.join(carregamentosDir, fileName));
+                  copiedNames.add(fileName.toLowerCase());
+                  copiedSources.add(srcKey);
+                  fotosCopiadasCarreg++;
+                } catch (e) {
+                  console.warn(`[AnaliseFrutos Carregamentos] Falha ao copiar ${fileName}: ${e.message}`);
+                }
+              });
+            }
+          } catch (e) {
+            console.warn(`[AnaliseFrutos Carregamentos] Falha ao copiar fotos gerais: ${e.message}`);
+          }
+        }
+
+        if (fotosCopiadasCarreg) console.log(`[AnaliseFrutos Carregamentos] ${fotosCopiadasCarreg} foto(s) copiadas`);
+
+        // Copia PDF
+        const srcPdf = path.join(pdfDir, nomeArquivoPdf);
+        if (fs.existsSync(srcPdf)) {
+          fs.copyFileSync(srcPdf, path.join(carregamentosDir, nomePdfCustom));
+          console.log(`[AnaliseFrutos Carregamentos] PDF copiado: ${nomePdfCustom}`);
+        }
+      } catch (e) {
+        console.warn(`[AnaliseFrutos] Falha ao copiar para Carregamentos 2026: ${e.message}`);
+      }
+
+      // Cópia organizada por controle: analiseproducao/por_controle/{fazenda}/{variedade}/{controle}/{campo}/
+      if (Object.keys(fotosProdByCampo).length) {
+        const faz  = sanitizeFolder(payload.fazenda_talhao || payload.fazenda, "sem_fazenda");
+        const vari = sanitizeFolder(payload.variedade, "sem_variedade");
+        const ctrl = sanitizeFolder(payload.controle, "sem_controle");
+        for (const [campo, fotos] of Object.entries(fotosProdByCampo)) {
+          const porControleDir = path.join(
+            ANALISE_FRUTOS_NETWORK_ROOT, "analiseproducao", "por_controle", faz, vari, ctrl, campo
+          );
+          ensureDir(porControleDir);
+          for (const foto of fotos) {
+            if (foto.disk_path && fs.existsSync(foto.disk_path)) {
+              try {
+                fs.copyFileSync(foto.disk_path, path.join(porControleDir, foto.nome));
+              } catch (e) {
+                console.warn(`[AnaliseFrutos] Falha ao copiar ${foto.nome} para por_controle/${campo}: ${e.message}`);
+              }
+            }
+          }
+        }
+        console.log(`[AnaliseFrutos] Fotos copiadas para por_controle/${faz}/${vari}/${ctrl}`);
+      }
     } catch (copyErr) {
       networkWarning = `Falha ao salvar na rede: [${copyErr.code || 'ERR'}] ${copyErr.message}`;
       console.warn(`[AnaliseFrutos] ${networkWarning}`);
@@ -393,6 +1146,7 @@ const Salvar = async (req, res) => {
       tipo_analise: payload.tipo_analise,
       fazenda_talhao: payload.fazenda_talhao,
       talhao: payload.talhao,
+      safra: payload.safra,
       semana: payload.semana,
       data_ref: payload.data,
       controle: payload.controle,
@@ -448,6 +1202,9 @@ const Salvar = async (req, res) => {
       .catch((backgroundError) => {
         console.error(`[AF] Erro no processamento em segundo plano para ${formId}:`, backgroundError);
       });
+
+    // Envia cópia para API externa em background (não bloqueia a resposta)
+    enviarParaApiExterna({ ...payload, form_id: formId, _is_edicao_api_externa: isEditRequest }, frutos, lotes);
 
     return res.status(201).json({
       success: true,
@@ -507,13 +1264,20 @@ const GerarTestePdf = async (req, res) => {
     const files = Array.isArray(filesMap) ? filesMap : (filesMap.fotos || []);
     const now = new Date();
     const tipo = normalizeTipo(payload.tipo_analise);
-    const { month, day, pdfDir, fotosFolder } = getDateParts(now, tipo, {
+    const { pdfDir, fotosFolder } = getDateParts(now, tipo, {
       fazenda: payload.fazenda_talhao || payload.fazenda,
       talhao: payload.talhao,
       variedade: payload.variedade,
       controle: payload.controle,
     });
     ensureDir(pdfDir);
+
+    // Apaga AF-TESTE-*.pdf antigos desta pasta antes de gerar o novo
+    try {
+      fs.readdirSync(pdfDir)
+        .filter((f) => f.startsWith('AF-TESTE-') && f.endsWith('.pdf'))
+        .forEach((f) => { try { fs.unlinkSync(path.join(pdfDir, f)); } catch {} });
+    } catch {}
 
     const totalFiles = files.length + PRODUCAO_CAMPOS_FOTOS.reduce((s, c) => s + (filesMap[`fotos_${c}`]?.length || 0), 0);
     console.log(`[AnaliseFrutos TESTE] Recebidas ${totalFiles} foto(s). Tipo: ${tipo}`);
@@ -532,16 +1296,42 @@ const GerarTestePdf = async (req, res) => {
       url: `/api/analise-frutos/fotos/${fotosFolder}/${encodeURIComponent(file.filename)}`,
     }));
 
+    // Fotos gerais de campo (sem semana/produção) - adicionadas às fotos gerais
+    const fotosGeraisByCampo = {};
+    if (!payload.semana) {
+      for (const campo of PRODUCAO_CAMPOS_FOTOS) {
+        const campoFiles = filesMap[`fotos_${campo}`] || [];
+        if (campoFiles.length) {
+          const campoFotos = campoFiles.map((file) => ({
+            form_id: baseId,
+            nome: file.filename,
+            caminho_relativo: `${fotosFolder}/${campo}/${file.filename}`,
+            url: `/api/analise-frutos/fotos/${fotosFolder}/${campo}/${encodeURIComponent(file.filename)}`,
+          }));
+          fotosGeraisByCampo[campo] = campoFotos;
+          console.log(`  [geral/${campo}] TESTE: ${campoFiles.length} foto(s) novas`);
+        }
+      }
+    }
+    // Mesclar fotos gerais de campo com fotos genéricas
+    const todasFotosGeraisTeste = [
+      ...fotosSalvas,
+      ...Object.values(fotosGeraisByCampo).flat(),
+    ];
+
     const fotosProdByCampo = {};
     for (const campo of PRODUCAO_CAMPOS_FOTOS) {
       const campoFiles = filesMap[`fotos_${campo}`] || [];
+      
+      // Só processa como produção se tiver semana
+      if (!payload.semana) continue;
+      
       const { urlPath } = getFotosProdDir(
         payload.fazenda_talhao || payload.fazenda,
         payload.talhao,
         payload.variedade,
         payload.controle,
-        campo,
-        now,
+        payload.semana,
       );
       const novasFotos = campoFiles.map((file) => ({
         form_id: baseId,
@@ -560,12 +1350,15 @@ const GerarTestePdf = async (req, res) => {
         .filter((item) => item?.disk_path && fs.existsSync(item.disk_path))
         .map((item) => ({ ...item, form_id: baseId }));
 
-      const todasFotosCampo = [...fotosSalvasCampo, ...novasFotos];
+      // Se vieram fotos novas → substitui as antigas; senão mantém as existentes
+      const todasFotosCampo = novasFotos.length > 0 ? novasFotos : fotosSalvasCampo;
       if (todasFotosCampo.length) fotosProdByCampo[campo] = todasFotosCampo;
     }
 
-    const existingFotos = Array.isArray(payload.fotos_salvas) ? payload.fotos_salvas : [];
-    const allFotos = [...existingFotos, ...fotosSalvas];
+    let _fotosSalvasRaw2 = payload.fotos_salvas;
+    if (typeof _fotosSalvasRaw2 === 'string') { try { _fotosSalvasRaw2 = JSON.parse(_fotosSalvasRaw2); } catch {} }
+    const existingFotos = Array.isArray(_fotosSalvasRaw2) ? _fotosSalvasRaw2 : [];
+    const allFotos = [...existingFotos, ...todasFotosGeraisTeste];
 
     const nomeArquivoPdf = `${baseId}.pdf`;
     await gerarRelatorioAnaliseFrutosPDF({ ...payload, fotos_salvas: allFotos, fotos_producao: fotosProdByCampo, layout: "novo" }, {
@@ -574,17 +1367,44 @@ const GerarTestePdf = async (req, res) => {
       layout: "novo",
     });
 
-    // Copia o PDF de teste para a rede
+    // PDFs de teste NÃO são copiados para rede (evita poluição com AF-TESTE-*)
     try {
       const networkDir = getNetworkDir(tipo, payload.fazenda_talhao || payload.fazenda, payload.talhao, payload.variedade, payload.controle, now);
-      ensureDir(networkDir);
-      fs.copyFileSync(path.join(pdfDir, nomeArquivoPdf), path.join(networkDir, nomeArquivoPdf));
-      console.log(`[AnaliseFrutos TESTE] PDF copiado para rede: ${networkDir}`);
+
+      // Copia fotos por campo para estrutura producao/FAZ/VAR/CTRL/DATE/campo/ na rede
+      if (Object.keys(fotosProdByCampo).length) {
+        for (const [campo, fotos] of Object.entries(fotosProdByCampo)) {
+          const campoNetworkDir = path.join(networkDir, campo);
+          ensureDir(campoNetworkDir);
+          for (const foto of fotos) {
+            if (foto.disk_path && fs.existsSync(foto.disk_path)) {
+              try {
+                fs.copyFileSync(foto.disk_path, path.join(campoNetworkDir, foto.nome));
+              } catch (e) {
+                console.warn(`[AnaliseFrutos TESTE] Falha ao copiar ${foto.nome} para rede/${campo}: ${e.message}`);
+              }
+            }
+          }
+        }
+      }
+
+      // Mantém cópia flat em analiseproducao/semana_XX/foto/ (estrutura agregada por semana)
+      const fotoProdLocalDir = getFotosProdDir(
+        payload.fazenda_talhao || payload.fazenda,
+        payload.talhao,
+        payload.variedade,
+        payload.controle,
+        payload.semana,
+      ).dir;
+      const fotoProdNetworkDir = getFotosProdDirNetwork(payload.semana);
+      if (fs.existsSync(fotoProdLocalDir)) {
+        copyDirToNetwork(fotoProdLocalDir, fotoProdNetworkDir, "[AnaliseFrutos TESTE Producao]");
+      }
     } catch (copyErr) {
-      console.warn(`[AnaliseFrutos TESTE] Falha ao copiar PDF para rede: ${copyErr.message}`);
+      console.warn(`[AnaliseFrutos TESTE] Falha ao copiar fotos de produção: ${copyErr.message}`);
     }
 
-    const pdfRelativePath = `${month}/${day}/${nomeArquivoPdf}`;
+    const pdfRelativePath = `${fotosFolder}/${nomeArquivoPdf}`;
     const pdfUrl = encodeURI(`/api/analise-frutos/pdf/${pdfRelativePath}`);
 
     return res.status(200).json({
@@ -666,6 +1486,55 @@ const BuscarPorId = async (req, res) => {
 const Remover = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const registro = await repositoryAnaliseFrutos.BuscarPorId(id);
+    if (!registro) {
+      return res.status(404).json({
+        success: false,
+        error: "Registro nao encontrado",
+      });
+    }
+
+    const payloadRegistro =
+      registro?.payload_json && typeof registro.payload_json === "object"
+        ? registro.payload_json
+        : {};
+
+    const dataExterna = String(payloadRegistro?.data || registro?.data_ref || "");
+    const fazendaExterna = String(
+      payloadRegistro?.fundo_agricola
+      || payloadRegistro?.fazenda
+      || payloadRegistro?.fazenda_talhao
+      || registro?.fazenda_talhao
+      || ""
+    );
+    const talhaoExterno = String(payloadRegistro?.talhao || registro?.talhao || "");
+    const controleExterno = String(payloadRegistro?.controle ?? registro?.controle ?? "");
+    const safraExterna = String(payloadRegistro?.safra || registro?.safra || "");
+
+    try {
+      if (controleExterno) {
+        const deleteResult = await deletarRegistrosApiExterna({
+          data: dataExterna,
+          fazenda: fazendaExterna,
+          talhao: talhaoExterno,
+          controle: controleExterno,
+          safra: safraExterna,
+        });
+
+        if (deleteResult.errors.length > 0) {
+          const firstError = deleteResult.errors[0]?.reason;
+          throw new Error(firstError?.response?.data?.detail || firstError?.message || "erro desconhecido");
+        }
+      }
+    } catch (extErr) {
+      return res.status(502).json({
+        success: false,
+        error: "Falha ao remover registro na API externa",
+        details: extErr.message,
+      });
+    }
+
     const result = await repositoryAnaliseFrutos.Remover(id);
 
     if (!result?.changes) {
@@ -696,12 +1565,80 @@ const ServirFoto = (req, res) => {
     const relPath = req.params[0];
     if (!relPath) return res.status(400).end();
     const segments = relPath.split("/").map(decodeURIComponent).filter((s) => s && s !== ".." && s !== ".");
-    const absPath = path.join(ANALISE_FRUTOS_ROOT, ...segments);
-    if (!absPath.startsWith(ANALISE_FRUTOS_ROOT)) return res.status(403).end();
-    if (!fs.existsSync(absPath)) return res.status(404).end();
-    return res.sendFile(absPath);
+
+    const localPath = path.join(ANALISE_FRUTOS_ROOT, ...segments);
+    if (localPath.startsWith(ANALISE_FRUTOS_ROOT) && fs.existsSync(localPath)) {
+      return res.sendFile(localPath);
+    }
+
+    const networkPath = path.join(ANALISE_FRUTOS_NETWORK_ROOT, ...segments);
+    if (networkPath.startsWith(ANALISE_FRUTOS_NETWORK_ROOT) && fs.existsSync(networkPath)) {
+      return res.sendFile(networkPath);
+    }
+
+    return res.status(404).end();
   } catch {
     return res.status(500).end();
+  }
+};
+
+// GET /api/analise-frutos/fotos-por-controle?controle=5067&variedade=PALMER
+// Varre analise_frutos/analiseproducao/por_controle/{fazenda}/{variedade}/{controle}/{campo}/
+// e retorna URLs de firmeza e maturacao do controle informado.
+const FotosPorControle = (req, res) => {
+  try {
+    const controle = String(req.query.controle || '').trim();
+    const variedade = String(req.query.variedade || '').trim();
+
+    if (!controle) {
+      return res.status(400).json({ success: false, error: "Parâmetro 'controle' é obrigatório." });
+    }
+
+    const porControleDir = path.join(ANALISE_FRUTOS_NETWORK_ROOT, "analiseproducao", "por_controle");
+    if (!fs.existsSync(porControleDir)) {
+      return res.json({ success: true, controle, variedade, firmeza: [], maturacao: [] });
+    }
+
+    const campos = ["firmeza", "maturacao"];
+    const resultado = { firmeza: [], maturacao: [] };
+
+    const varNorm = sanitizeFolder(variedade, "").toLowerCase();
+    const ctrlNorm = sanitizeFolder(controle, "").toLowerCase();
+
+    // Varre: por_controle/{fazenda}/{variedade}/{controle}/{campo}/
+    for (const fazenda of fs.readdirSync(porControleDir)) {
+      const fazDir = path.join(porControleDir, fazenda);
+      if (!fs.statSync(fazDir).isDirectory()) continue;
+
+      for (const vari of fs.readdirSync(fazDir)) {
+        if (variedade && vari.toLowerCase() !== varNorm) continue;
+        const variDir = path.join(fazDir, vari);
+        if (!fs.statSync(variDir).isDirectory()) continue;
+
+        for (const ctrl of fs.readdirSync(variDir)) {
+          if (ctrl.toLowerCase() !== ctrlNorm) continue;
+          const ctrlDir = path.join(variDir, ctrl);
+          if (!fs.statSync(ctrlDir).isDirectory()) continue;
+
+          for (const campo of campos) {
+            const campoDir = path.join(ctrlDir, campo);
+            if (!fs.existsSync(campoDir)) continue;
+            for (const foto of fs.readdirSync(campoDir)) {
+              if (!/\.(jpg|jpeg|png|webp)$/i.test(foto)) continue;
+              resultado[campo].push(
+                `/api/analise-frutos/fotos/analiseproducao/por_controle/${encodeURIComponent(fazenda)}/${encodeURIComponent(vari)}/${encodeURIComponent(ctrl)}/${campo}/${encodeURIComponent(foto)}`
+              );
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`[FotosPorControle] controle=${controle} variedade=${variedade} → firmeza:${resultado.firmeza.length} maturacao:${resultado.maturacao.length}`);
+    return res.json({ success: true, controle, variedade, ...resultado });
+  } catch (error) {
+    console.error("[FotosPorControle] Erro:", error.message);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -730,5 +1667,5 @@ const DiagnosticoRede = (req, res) => {
 };
 
 export { upload };
-export default { Salvar, GerarTestePdf, Listar, BuscarPorId, Remover, ServirFoto, DiagnosticoRede, ANALISE_FRUTOS_ROOT };
+export default { Salvar, GerarTestePdf, Listar, BuscarPorId, Remover, ServirFoto, DiagnosticoRede, FotosPorControle, ANALISE_FRUTOS_ROOT };
 

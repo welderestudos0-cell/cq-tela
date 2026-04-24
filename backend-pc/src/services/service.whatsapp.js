@@ -915,6 +915,7 @@ const enviarMediaComRetry = async ({
   sendOptions = {},
   contexto = "WA",
   tentativas = 3,
+  filename = null,
 }) => {
   if (!caminhoArquivo || !fs.existsSync(caminhoArquivo)) {
     throw new Error(`Arquivo nao encontrado: ${caminhoArquivo || "(vazio)"}`);
@@ -933,6 +934,7 @@ const enviarMediaComRetry = async ({
       }
 
       const media = MessageMedia.fromFilePath(caminhoArquivo);
+      if (filename) media.filename = filename;
       await client.sendMessage(grupoId, media, sendOptions);
       return;
     } catch (error) {
@@ -1080,10 +1082,22 @@ async function enviarPendentesAF() {
           throw new Error(`Arquivo PDF nao encontrado para ${formId}`);
         }
 
+        const caption = [
+          `📋 *Avaliação:* ${registro.tipo_analise || 'Análise de Frutos'}`,
+          `🌿 *Fazenda:* ${registro.fazenda_talhao || '-'}`,
+          `🔢 *Controle:* ${registro.controle || '-'}`,
+          `📅 *Safra:* ${registro.safra || 'M26'}`,
+        ].join('\n');
+
+        const sanitize = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').trim().slice(0, 40);
+        const dia = String(new Date().getDate()).padStart(2, '0');
+        const nomeCustom = `AF-${sanitize(registro.fazenda_talhao)}-${sanitize(registro.variedade)}-${sanitize(registro.controle)}-${dia}.pdf`;
+
         await enviarMediaComRetry({
           grupoIdInicial: grupoId,
           caminhoArquivo: caminhoPDF,
-          sendOptions: { sendMediaAsDocument: true },
+          filename: nomeCustom,
+          sendOptions: { sendMediaAsDocument: true, caption },
           contexto: "AF",
         });
         await repositoryAF.MarcarEnviado(formId, true);

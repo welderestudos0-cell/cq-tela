@@ -5,6 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import userRoutes from './routes/routes.js';
 import { inicializarWhatsApp } from './services/service.whatsapp.js';
@@ -111,11 +112,27 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+const getLocalIPs = () => {
+  const ips = [];
+  try {
+    const nets = os.networkInterfaces();
+    for (const iface of Object.values(nets)) {
+      for (const net of iface) {
+        if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
+      }
+    }
+  } catch {}
+  return ips;
+};
+
 app.listen(PORT, '0.0.0.0', () => {
+  const ips = getLocalIPs();
   console.log(`🎉================================🎉`);
   console.log(`🚀 AGROSOLO BACKEND INICIADO!`);
   console.log(`📍 Porta: ${PORT}`);
   console.log(`🌍 Rede: http://0.0.0.0:${PORT}`);
+  ips.forEach(ip => console.log(`🖥️  IP:    http://${ip}:${PORT}/api`));
   console.log(`💾 Banco: SQLite (src/database/banco.db)`);
   console.log(`🎉================================🎉`);
 
