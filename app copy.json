@@ -1,0 +1,64 @@
+
+{
+  "expo": {
+    "name": "Agrodan irriga",
+    "slug": "agrosolo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logoagrodannn.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logoagrodannn.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logoagrodannn.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE"
+      ],
+      "usesCleartextTraffic": true,
+      "networkSecurityConfig": "./network_security_config.xml",
+      "package": "com.agrodanirriga2.agrosoloapp"
+    },
+    "web": {
+      "favicon": "./assets/agrosolologo.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "networkSecurityConfig": "./network_security_config.xml"
+          }
+        }
+        
+      ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f47c188d-6807-4625-93ff-0f6e98a42fb7",
+      "checkOnLaunch": "ALWAYS",
+      "fallbackToCacheTimeout": 30000
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f47c188d-6807-4625-93ff-0f6e98a42fb7"
+      }
+    }
+  }
+}
