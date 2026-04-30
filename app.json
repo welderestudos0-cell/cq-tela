@@ -1,5 +1,65 @@
+
+
 {
   "expo": {
+    "name": "Controle de Qualidade",
+    "slug": "agrosolo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logocq.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logocq.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "softwareKeyboardLayoutMode": "pan",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logocq.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE"
+      ],
+      "usesCleartextTraffic": true,
+      "networkSecurityConfig": "./network_security_config.xml",
+      "package": "com.cqagrodan1.agrosoloapp"
+    },
+    "web": {
+      "favicon": "./assets/agrosolologo.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "networkSecurityConfig": "./network_security_config.xml"
+          }
+        }
+      ],
+      "expo-asset"
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e58d1a3e-44e6-4503-bda0-536a8849f379",
+      "checkOnLaunch": "ALWAYS",
+      "fallbackToCacheTimeout": 30000
+    },
     "extra": {
       "eas": {
         "projectId": "e58d1a3e-44e6-4503-bda0-536a8849f379"

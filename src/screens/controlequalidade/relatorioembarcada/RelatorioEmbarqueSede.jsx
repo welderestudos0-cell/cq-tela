@@ -60,8 +60,8 @@ const EMBARQUE_DRAFTS_STORAGE_KEY = 'controle_qualidade_embarque_sede_drafts_v2'
 const EMBARQUE_VARIEDADES_STORAGE_KEY = '@embarque:variedades';
 const EMBARQUE_CLIENTES_STORAGE_KEY = '@embarque:clientes';
 const EMBARQUE_NAVIOS_STORAGE_KEY = '@embarque:navios';
-const PRIORIZACAO_CARREGAMENTOS_CACHE_KEY = '@priorização:carregamentos';
-const PRIORIZACAO_MODAL_CACHE_KEY = '@priorização:modal:';
+const PRIORIZACAO_CARREGAMENTOS_CACHE_KEY = '@priorizacao:carregamentos';
+const PRIORIZACAO_MODAL_CACHE_KEY = '@priorizacao:modal:';
 const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
 const GENERAL_INFO_KEYS = ['customer', 'container', 'oc', 'loading', 'etd', 'eta', 'vessel'];
 const META_INFO_KEYS = ['analysisDate', 'farm', 'talhao', 'variety'];
@@ -960,6 +960,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
   const modalScrollViewRef = useRef(null);
   const inputRefs = useRef({});
   const allowNextBeforeRemoveRef = useRef(false);
+  const selectedCarregamentoRef = useRef(null);
 
   const totalPhotos = countPhotosFromSections(sections);
 
@@ -1360,12 +1361,20 @@ export default function RelatorioEmbarqueSede({ navigation }) {
     carregarServidorFotosInline();
   }, [modalTab, selectedCarregamento]);
 
-  // Salva dados do modal em cache automaticamente quando mudam
+  // Mantém ref sempre atualizada com o carregamento atual (evita closure stale)
+  useEffect(() => {
+    selectedCarregamentoRef.current = selectedCarregamento;
+  }, [selectedCarregamento]);
+
+  // Salva rascunho local automaticamente quando pallets, checklist ou campos mudam
   useEffect(() => {
     if (!selectedCarregamento) return;
     const timer = setTimeout(() => {
-      cacheModalData(selectedCarregamento).catch(() => {});
-    }, 500); // Aguarda 500ms após parar de digitar
+      const carreg = selectedCarregamentoRef.current;
+      if (!carreg) return;
+      cacheModalData(carreg).catch(() => {});
+      salvarRascunhoLocal(carreg).catch(() => {});
+    }, 600);
     return () => clearTimeout(timer);
   }, [selectedCarregamento, modalChecklist, modalContainerTermografo, modalContainerEtiqueta]);
 
@@ -3177,6 +3186,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         PRIORIZACAO_CARREGAMENTOS_CACHE_KEY,
         JSON.stringify({ timestamp: Date.now(), data: list })
       );
+      console.log(`[Cache] ${list.length} carregamentos salvos em cache (key: ${PRIORIZACAO_CARREGAMENTOS_CACHE_KEY})`);
     } catch (e) {
       console.warn('[Cache] Falha ao salvar carregamentos:', e?.message);
     }
@@ -3346,8 +3356,15 @@ export default function RelatorioEmbarqueSede({ navigation }) {
     // 1a. Carrega rascunho local (AsyncStorage) — tem prioridade sobre o banco
     let rascunhoLocal = null;
     try {
-      const raw = await AsyncStorage.getItem(`@priorização:rascunho:${carreg.id}`);
+      const raw = await AsyncStorage.getItem(`@priorizacao:rascunho:${carreg.id}`);
       if (raw) rascunhoLocal = JSON.parse(raw);
+    } catch (e) {}
+
+    // Cache do modal (salvo automaticamente ao fechar) — fallback offline
+    let modalCache = null;
+    try {
+      const rawModal = await AsyncStorage.getItem(`${PRIORIZACAO_MODAL_CACHE_KEY}${carreg.id}`);
+      if (rawModal) modalCache = JSON.parse(rawModal);
     } catch (e) {}
 
     // 1b. Busca dados salvos do banco (etiqueta, temperatura, checklist)
@@ -3368,7 +3385,21 @@ export default function RelatorioEmbarqueSede({ navigation }) {
       }
       if (saved?.checklist) savedChecklist = saved.checklist;
     } catch (e) {
-      // sem dados salvos — abre em branco
+      // Offline: usa cache do modal se disponível
+      if (modalCache?.carregamento?.pallets?.length > 0) {
+        const cachedPallets = modalCache.carregamento.pallets;
+        savedPalletsList = cachedPallets.map((p) => ({
+          planpal: p.palletId,
+          etiqueta: p.etiqueta || '',
+          temperatura_1: p.temp1 || '',
+          temperatura_2: p.temp2 || '',
+        }));
+        savedPalletsList.forEach((sp) => { savedPalletMap[String(sp.planpal)] = sp; });
+        if (modalCache.checklist) savedChecklist = Object.fromEntries(
+          (modalCache.checklist || []).map((i) => [i.key, i.value])
+        );
+        console.log('[Offline] Carregando pallets do cache do modal:', savedPalletsList.length);
+      }
     }
 
     setLoadingOC(null);
@@ -3387,9 +3418,12 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         // Rascunho local complementa apenas se o banco não tiver valor
         const rp = rascunhoLocal?.pallets?.find((r) => String(r.palletId) === String(p.palletId));
 
-        const etiqueta = sp?.etiqueta || rp?.etiqueta || p.etiqueta || '';
-        const temp1    = sp?.temperatura_1 || rp?.temp1 || p.temp1 || '';
-        const temp2    = sp?.temperatura_2 || rp?.temp2 || p.temp2 || '';
+        // Rascunho local tem prioridade — é sempre mais recente que o banco
+        const etiqueta = rp?.etiqueta !== undefined ? rp.etiqueta
+          : sp?.etiqueta !== undefined ? sp.etiqueta
+          : p.etiqueta ?? '';
+        const temp1 = rp?.temp1 || sp?.temperatura_1 || p.temp1 || '';
+        const temp2 = rp?.temp2 || sp?.temperatura_2 || p.temp2 || '';
 
         return { ...p, etiqueta, temp1, temp2 };
       }),
@@ -3415,11 +3449,11 @@ export default function RelatorioEmbarqueSede({ navigation }) {
     // 3. Abre o modal com tudo já preenchido de uma vez
     setSelectedCarregamento(carregNovo);
     setModalTab('pallets');
-    setModalFotos({});
+    setModalFotos(rascunhoLocal?.fotos || {});
     setServidorFotosInline({});
     setPalletInfoMap({});
-    setModalContainerTermografo(rascunhoLocal?.termografo || savedPriorizacao?.termografo || '');
-    setModalContainerEtiqueta(rascunhoLocal?.etiqueta || savedPriorizacao?.etiqueta || '');
+    setModalContainerTermografo(rascunhoLocal?.termografo || savedPriorizacao?.termografo || modalCache?.termografo || '');
+    setModalContainerEtiqueta(rascunhoLocal?.etiqueta || savedPriorizacao?.etiqueta || modalCache?.etiqueta || '');
     setModalChecklist(
       CHECKLIST_CONTAINER_ITEMS.map((item) => ({
         key: item.key,
@@ -3489,7 +3523,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) { Alert.alert('Permissão negada', 'Habilite o acesso à câmera.'); return; }
-      const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.6 });
       if (!result.canceled && result.assets?.length) {
         const uri = result.assets[0]?.uri;
         if (uri) {
@@ -3585,6 +3619,34 @@ export default function RelatorioEmbarqueSede({ navigation }) {
   const salvarRascunhoLocal = async (carreg) => {
     if (!carreg) return;
     try {
+      // Copia as fotos para diretório permanente do app
+      const fotosCacheDir = FileSystem.documentDirectory
+        ? `${FileSystem.documentDirectory}priorizacao_fotos_cache/`
+        : null;
+
+      const fotosSalvas = {};
+      if (fotosCacheDir && Object.keys(modalFotos).length > 0) {
+        await FileSystem.makeDirectoryAsync(fotosCacheDir, { intermediates: true }).catch(() => {});
+        for (const [campo, uris] of Object.entries(modalFotos)) {
+          fotosSalvas[campo] = [];
+          for (const uri of (uris || [])) {
+            try {
+              const nome = `${carreg.id}_${campo}_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+              const destino = `${fotosCacheDir}${nome}`;
+              // Só copia se ainda não está no diretório permanente
+              if (!uri.startsWith(fotosCacheDir)) {
+                await FileSystem.copyAsync({ from: uri, to: destino });
+                fotosSalvas[campo].push(destino);
+              } else {
+                fotosSalvas[campo].push(uri);
+              }
+            } catch (e) {
+              fotosSalvas[campo].push(uri); // mantém a URI original se falhar
+            }
+          }
+        }
+      }
+
       const rascunho = {
         oc: carreg.id,
         pallets: (carreg.pallets || []).map((p) => ({
@@ -3596,10 +3658,11 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         checklist: modalChecklist,
         termografo: modalContainerTermografo || '',
         etiqueta: modalContainerEtiqueta || '',
+        fotos: fotosSalvas,
         savedAt: Date.now(),
       };
       await AsyncStorage.setItem(
-        `@priorização:rascunho:${carreg.id}`,
+        `@priorizacao:rascunho:${carreg.id}`,
         JSON.stringify(rascunho)
       );
     } catch (e) {
@@ -3607,17 +3670,56 @@ export default function RelatorioEmbarqueSede({ navigation }) {
     }
   };
 
-  // Fecha o modal salvando apenas no local
+  // Fecha o modal salvando apenas no local — usa ref para ter o estado mais atual
   const fecharModalCarregamento = () => {
-    const carreg = selectedCarregamento;
+    const carreg = selectedCarregamentoRef.current || selectedCarregamento;
     setFiltroPallets('');
     setSelectedCarregamento(null);
-    salvarRascunhoLocal(carreg).catch(() => {});
+    if (carreg) salvarRascunhoLocal(carreg).catch(() => {});
   };
 
   const enviarPriorizacao = async () => {
     if (!selectedCarregamento) return;
     setModalFotosUploading(true);
+
+    // Monta payload base logo aqui — disponível mesmo se falhar nas fotos
+    const palletsBase = (selectedCarregamento.pallets || []).map((p) => {
+      const key = `${p.oc}_${p.palletId}`;
+      const infoData = palletInfoMap[key]?.data || [];
+      const info = infoData[0] || {};
+      return {
+        planpal: p.palletId,
+        safra: selectedCarregamento.safra || '',
+        qtd_caixas: p.qtdCaixas || 0,
+        caixa_descricao: p.caixaDescricao || '',
+        calibre: p.calibre ?? null,
+        classe_prod: p.classProd ?? null,
+        etiqueta: p.etiqueta || '',
+        temperatura_1: String(p.temp1 || '').replace(',', '.'),
+        temperatura_2: String(p.temp2 || '').replace(',', '.'),
+        controle: p.controle || info.compa_in_nrocontrole || null,
+        variedade: p.variedade || info.VARIEDADE || info.variedade || '',
+        fazenda: info.FAZENDA || info.fazenda || '',
+      };
+    });
+
+    let payloadFinal = {
+      oc: selectedCarregamento.id,
+      cliente: generalInfo.customer || '',
+      safra: selectedCarregamento.safra || '',
+      apelido: selectedCarregamento.apelido || '',
+      container: selectedCarregamento.container || '',
+      data_saida: selectedCarregamento.dataSaida || '',
+      motorista: selectedCarregamento.motorista || '',
+      pallets: palletsBase,
+      checklist: modalChecklist,
+      fotos_json: [],
+      termografo: modalContainerTermografo || '',
+      etiqueta: modalContainerEtiqueta || '',
+      avaliador: String(user?.nome || user?.name || user?.userName || user?.email || '').trim(),
+      sincronizado: true,
+    };
+
     try {
       let fotosJson = [];
       // 1. Upload fotos se houver (todas as categorias juntas)
@@ -3631,6 +3733,27 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         }
       }
       if (allFotoUris.length > 0) {
+        // Comprime todas as fotos antes de enviar (máx 1280px, qualidade 0.65)
+        const allFotoUrisComprimidas = await Promise.all(
+          allFotoUris.map(async (uri) => {
+            try {
+              const info = await FileSystem.getInfoAsync(uri);
+              // Só comprime se maior que 500KB
+              if (info.size && info.size > 500 * 1024) {
+                const comp = await ImageManipulator.manipulateAsync(
+                  uri,
+                  [{ resize: { width: 1280 } }],
+                  { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG }
+                );
+                return comp.uri;
+              }
+              return uri;
+            } catch (e) {
+              return uri;
+            }
+          })
+        );
+
         const { pallets: palletNums, controles } = await extrairPalletsEControlesCarregamento(selectedCarregamento);
         const palletsFolder = palletNums.length ? palletNums.join('_') : 'sem_pallet';
         const controlesFolder = controles.length ? controles.join('_') : 'sem_controle';
@@ -3643,52 +3766,25 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         formData.append('controles_json', JSON.stringify(controles));
         formData.append('controles_folder', controlesFolder);
         formData.append('campos_json', JSON.stringify(allFotoCampos));
-        for (const uri of allFotoUris) {
-          const name = uri.split('/').pop() || `foto_${Date.now()}.jpg`;
+        for (let i = 0; i < allFotoUrisComprimidas.length; i++) {
+          const uri = allFotoUrisComprimidas[i];
+          const campo = allFotoCampos[i] || 'foto';
+          const container = String(selectedCarregamento.container || 'sem_container')
+            .replace(/[^a-zA-Z0-9]/g, '_');
+          const oc = String(selectedCarregamento.id || '');
+          const ext = uri.split('.').pop()?.split('?')[0]?.toLowerCase() || 'jpg';
+          const name = `${container}_${oc}_${campo}_${i + 1}.${ext}`;
           formData.append('fotos', { uri, name, type: 'image/jpeg' });
         }
         const uploadRes = await api.post('/priorizacao-pallets/upload-fotos', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 180000,
         });
         const uploadedFotos = uploadRes.data?.fotos || [];
         fotosJson = uploadedFotos.map((f, idx) => ({ ...f, campo: allFotoCampos[idx] || '' }));
       }
-      // 2. Montar payload enriquecido e salvar tudo em uma única chamada
-      const palletsPayload = (selectedCarregamento.pallets || []).map((p) => {
-        const key = `${p.oc}_${p.palletId}`;
-        const infoData = palletInfoMap[key]?.data || [];
-        const info = infoData[0] || {};
-        return {
-          planpal: p.palletId,
-          safra: selectedCarregamento.safra || '',
-          qtd_caixas: p.qtdCaixas || 0,
-          caixa_descricao: p.caixaDescricao || '',
-          calibre: p.calibre ?? null,
-          classe_prod: p.classProd ?? null,
-          etiqueta: p.etiqueta || '',
-          temperatura_1: String(p.temp1 || '').replace(',', '.'),
-          temperatura_2: String(p.temp2 || '').replace(',', '.'),
-          controle: p.controle || info.compa_in_nrocontrole || null,
-          variedade: p.variedade || info.VARIEDADE || info.variedade || '',
-          fazenda: info.FAZENDA || info.fazenda || '',
-        };
-      });
-      const payloadFinal = {
-        oc: selectedCarregamento.id,
-        cliente: generalInfo.customer || '',
-        safra: selectedCarregamento.safra || '',
-        apelido: selectedCarregamento.apelido || '',
-        container: selectedCarregamento.container || '',
-        data_saida: selectedCarregamento.dataSaida || '',
-        motorista: selectedCarregamento.motorista || '',
-        pallets: palletsPayload,
-        checklist: modalChecklist,
-        fotos_json: fotosJson,
-        termografo: modalContainerTermografo || '',
-        etiqueta: modalContainerEtiqueta || '',
-        avaliador: String(user?.nome || user?.name || user?.userName || user?.email || '').trim(),
-        sincronizado: true,
-      };
+      // 2. Atualiza payload com fotos enviadas
+      payloadFinal = { ...payloadFinal, fotos_json: fotosJson };
 
       console.log('\n========== [Priorizacao] PAYLOAD ENVIADO ==========');
       console.log(JSON.stringify(payloadFinal, null, 2));
@@ -3720,7 +3816,38 @@ export default function RelatorioEmbarqueSede({ navigation }) {
       }));
     } catch (error) {
       console.error('[Priorização] Erro:', error?.message);
-      Alert.alert('Erro', 'Não foi possível enviar os dados.');
+      // Salva no sininho (offline) quando falha o envio
+      try {
+        const nowIso = new Date().toISOString();
+        const offlineItem = {
+          id: `PRIOR-OFFLINE-${selectedCarregamento.id}-${Date.now()}`,
+          tipo: 'Priorização',
+          oc: selectedCarregamento.id,
+          apelido: selectedCarregamento.apelido || '',
+          container: selectedCarregamento.container || '',
+          motorista: selectedCarregamento.motorista || '',
+          usuario: String(user?.nome || user?.name || user?.userName || '').trim(),
+          timestamp: nowIso,
+          dataColeta: nowIso,
+          sincronizado: false,
+          _syncStatus: 'pending',
+          _payload: payloadFinal,
+        };
+        const storedRaw = await AsyncStorage.getItem('priorizacao_offline');
+        const stored = storedRaw ? JSON.parse(storedRaw) : [];
+        const next = Array.isArray(stored)
+          ? [...stored.filter((i) => i.oc !== selectedCarregamento.id), offlineItem]
+          : [offlineItem];
+        await AsyncStorage.setItem('priorizacao_offline', JSON.stringify(next));
+
+        setCarregamentosStatus((prev) => ({
+          ...prev,
+          [selectedCarregamento.id]: { color: '#00def2', hasData: true, isSynced: false },
+        }));
+        Alert.alert('Salvo offline', 'Sem conexão. Os dados foram salvos no sininho para sincronizar depois.');
+      } catch (offlineErr) {
+        Alert.alert('Erro', 'Não foi possível enviar nem salvar offline.');
+      }
     } finally {
       setModalFotosUploading(false);
     }
@@ -5161,6 +5288,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {step !== 1 && (
       <TouchableOpacity
         style={[
           st.fab,
@@ -5182,6 +5310,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
           />
         )}
       </TouchableOpacity>
+      )}
 
       {/* Modal Galeria de Fotos por Fazenda */}
       <Modal
@@ -6310,7 +6439,11 @@ export default function RelatorioEmbarqueSede({ navigation }) {
 
           {/* ── ABA PALLETS ── */}
           {modalTab === 'pallets' && (
-          <>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'android' ? 100 : 0}
+          >
             {/* Campo fixo de filtro de pallets */}
             <View style={{ backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#E0E0E0', paddingTop: 10, paddingBottom: 14, paddingHorizontal: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F5', borderRadius: 10, borderWidth: 1.5, borderColor: '#D0D0D0', paddingHorizontal: 14, minHeight: 52 }}>
@@ -6408,7 +6541,8 @@ export default function RelatorioEmbarqueSede({ navigation }) {
                         onFocus={(e) => {
                           const target = e?.target ?? e?.nativeEvent?.target;
                           if (target && modalScrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard) {
-                            setTimeout(() => modalScrollViewRef.current.scrollResponderScrollNativeHandleToKeyboard(target, 320, true), 80);
+                            setTimeout(() => modalScrollViewRef.current.scrollResponderScrollNativeHandleToKeyboard(target, 380, true), 100);
+                            setTimeout(() => modalScrollViewRef.current.scrollResponderScrollNativeHandleToKeyboard(target, 380, true), 350);
                           }
                         }}
                         placeholder="0,0"
@@ -6425,7 +6559,8 @@ export default function RelatorioEmbarqueSede({ navigation }) {
                         onFocus={(e) => {
                           const target = e?.target ?? e?.nativeEvent?.target;
                           if (target && modalScrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard) {
-                            setTimeout(() => modalScrollViewRef.current.scrollResponderScrollNativeHandleToKeyboard(target, 320, true), 80);
+                            setTimeout(() => modalScrollViewRef.current.scrollResponderScrollNativeHandleToKeyboard(target, 380, true), 100);
+                            setTimeout(() => modalScrollViewRef.current.scrollResponderScrollNativeHandleToKeyboard(target, 380, true), 350);
                           }
                         }}
                         placeholder="0,0"
@@ -6438,7 +6573,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
               );
             })}
           </ScrollView>
-          </>
+          </KeyboardAvoidingView>
           )}
 
           {/* ── ABA FOTOS (por campo) ── */}
@@ -6658,7 +6793,7 @@ export default function RelatorioEmbarqueSede({ navigation }) {
           </ScrollView>
           )}
 
-          {/* ── BOTÃO ENVIAR FIXO ── */}
+          {/* ── BOTÃO SALVAR FIXO ── */}
           <View style={pgSt.enviarBarFixa}>
             <TouchableOpacity
               style={[pgSt.enviarBtn, modalFotosUploading && { opacity: 0.6 }]}
@@ -6666,14 +6801,9 @@ export default function RelatorioEmbarqueSede({ navigation }) {
               disabled={modalFotosUploading}
               activeOpacity={0.7}
             >
-              {modalFotosUploading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <MaterialIcons name="cloud-upload" size={20} color="#FFFFFF" />
-              )}
-              <Text style={pgSt.enviarBtnText}>
-                {modalFotosUploading ? 'Enviando...' : 'Salvar e enviar'}
-              </Text>
+              {modalFotosUploading
+                ? <ActivityIndicator size="small" color="#FFFFFF" />
+                : <MaterialIcons name="save" size={24} color="#FFFFFF" />}
             </TouchableOpacity>
           </View>
 
@@ -8712,27 +8842,24 @@ const pgSt = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  // ── Botão Salvar e Enviar (rodapé fixo do modal) ──
+  // ── Botão Salvar (FAB bolinha canto direito) ──
   enviarBarFixa: {
     position: 'absolute',
-    bottom: Platform.OS === 'android' ? 75 : 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+    bottom: Platform.OS === 'android' ? 70 : 30,
+    right: 20,
   },
   enviarBtn: {
-    flexDirection: 'row',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: GREEN,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 15,
-    borderRadius: 12,
-    backgroundColor: GREEN,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   enviarBtnText: {
     fontSize: 15,

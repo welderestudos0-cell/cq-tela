@@ -285,6 +285,13 @@ const buildAnaliseFrutosFormData = (payload = {}) => {
 
   
 const detectarTipoDados = (item, key) => {
+  if (key === 'priorizacao_offline' || item.tipo === 'Priorização') {
+    return {
+      tipo: 'Priorização',
+      emoji: '🚢',
+      icone: 'local-shipping'
+    };
+  }
   if (key === 'analise_frutos_offline' || item.tipo === 'Análise de Frutos' || item.tipo_analise || item.frutos || item.lotes) {
     return {
       tipo: 'Análise de Frutos',
@@ -416,32 +423,43 @@ const fetchOfflineData = async () => {
     const offlineKeys = allKeys.filter(key => {
       // Ignorar chave temporária
       if (key === 'dadosVazaoLinhas_temp') {
-        console.log('⏭️ Ignorando chave temporária:', key);
         return false;
       }
-      
+
+      // Ignorar TUDO do Relatório de Embarque — fica salvo local no app, não no sininho
+      if (
+        key.startsWith('controle_qualidade_embarque') ||
+        key.startsWith('@embarque:') ||
+        key.startsWith('@priorizacao:') ||
+        key.startsWith('@priorização:') ||
+        key.startsWith('api_base_url')
+      ) {
+        return false;
+      }
+
       // Ignorar chaves de configuração/usuário
       if (key === 'userToken' || key === 'userData' || key === 'userProfile') {
         return false;
       }
-      
+
       // Incluir chaves específicas do usuário
       const isUserSpecificKey = userData?.matricula && key.startsWith(`user_${userData.matricula}_`);
-      
-      // Incluir chaves genéricas de dados (ADICIONADA limpezas_offline e manutencoes_offline)
+
+      // Incluir chaves genéricas de dados offline
       const isGenericKey =
-        key === 'monitoramentos_offline' ||      // Principal para dados offline
-        key === 'dadosVazaoLinhas' ||            // Dados de vazão (se ainda existirem)
-        key === 'limpezas_offline' ||            // Dados de limpeza offline
-        key === 'manutencoes_offline' ||         // Dados de manutenção de bomba offline
-        key === 'consumo_agua_offline' ||        // Dados de consumo de água offline
-        key === 'kc_talhao_offline' ||           // Dados de cadastro KC offline
-        key === 'auditoria_luciano_offline' ||   // Dados de auditoria Luciano offline
-        key === 'maturacao_forcada_offline' ||   // Dados de maturação forçada offline
-        key === 'analise_frutos_offline' ||      // Dados de análise de frutos offline
+        key === 'monitoramentos_offline' ||
+        key === 'dadosVazaoLinhas' ||
+        key === 'limpezas_offline' ||
+        key === 'manutencoes_offline' ||
+        key === 'consumo_agua_offline' ||
+        key === 'kc_talhao_offline' ||
+        key === 'auditoria_luciano_offline' ||
+        key === 'maturacao_forcada_offline' ||
+        key === 'analise_frutos_offline' ||
+        key === 'priorizacao_offline' ||         // única key de priorização que vai ao sininho
         key.includes("pending") ||
         key.includes("restored");
-      
+
       return isUserSpecificKey || isGenericKey;
     });
 
@@ -534,6 +552,7 @@ const newItem = {
          key === 'limpezas_offline' ? 'limpeza_offline' :
          key === 'manutencoes_offline' ? 'manutencao_bomba' :
          key === 'analise_frutos_offline' ? 'analise_frutos_offline' :
+         key === 'priorizacao_offline' ? 'priorizacao_offline' :
          key.replace(`user_${userData.matricula}_`, ''),
   // Campos específicos de manutenção de bomba
   bomba: item.bomba,
@@ -1785,6 +1804,13 @@ const syncSingleItem = async (item, useFastAPI = false) => {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
       };
+
+    // DADOS DE PRIORIZAÇÃO
+    } else if (item.tipo === 'Priorização' || item.asyncStorageKey === 'priorizacao_offline') {
+
+      endpoint = '/priorizacao/salvar';
+      serverData = item._payload || item.originalData?._payload || item.originalData || item;
+      requestConfig = { headers: { 'Content-Type': 'application/json' } };
 
     } else {
       throw new Error(`Tipo de dados não suportado: ${item.tipo}`);
@@ -3765,10 +3791,10 @@ const handleBackupAllData = async (filteredPendingData = []) => {
   delayPressIn={0}
   delayPressOut={0}
 >
-  <Image source={require('../../assets/embarquecard.png')} style={[styles.cardImage, { opacity: 0.5 }]} resizeMode="cover" />
+  <Image source={require('../../assets/embarquecard.png')} style={styles.cardImage} resizeMode="cover" />
   <View style={styles.cardContent}>
-    <Text style={[styles.cardTitle, { opacity: 0.5 }]}>Relatorio de Embarque</Text>
-    <Text style={[styles.cardText, { opacity: 0.5 }]}>Registrar informações de embarque, conferência de cargas e geração de relatório</Text>
+    <Text style={styles.cardTitle}>Relatorio de Embarque</Text>
+    <Text style={styles.cardText}>Registrar informações de embarque, conferência de cargas e geração de relatório</Text>
   </View>
 </TouchableOpacity>
 
